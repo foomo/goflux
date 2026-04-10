@@ -1,0 +1,11 @@
+[tools]
+# https://mise-tools.jdx.dev/tools/bun
+bun = "1.3.11"
+# https://mise-tools.jdx.dev/tools/trivy
+#trivy = "0.69.3"
+# https://mise-tools.jdx.dev/tools/lefthook
+lefthook = "2.1.5"
+# https://mise-tools.jdx.dev/tools/golangci-lint
+golangci-lint = "2.11.4"
+# https://github.com/tinylib/msgp/releases
+"go:github.com/tinylib/msgp" = "1.6.3"

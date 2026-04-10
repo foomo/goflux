@@ -1,0 +1,54 @@
+.*
+*.zip
+*.tar
+*.tgz
+*.pem
+*.out
+*.log
+bin/
+dist/
+tmp/
+
+## Git
+!.gitignore
+!.gitkeep
+
+## GitHub
+!.github/
+
+## Mise
+!.mise.toml
+
+## Lefthook
+!.lefthook.yaml
+
+## VSCode
+!.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.default.json
+
+## Editorconfig
+!.editorconfig
+
+## Docker
+!.dockerignore
+
+## TypeScript
+*.tsbuildinfo
+
+### Golang
+/go.work
+/go.work.sum
+!.golangci.yaml
+!.goreleaser.yaml
+
+## Node
+!.npmrc
+**/node_modules/
+
+## Vitepress
+!docs/.vitepress
+docs/.vitepress/*
+!docs/.vitepress/theme/
+!docs/.vitepress/config.mts
