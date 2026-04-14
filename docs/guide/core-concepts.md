@@ -1,26 +1,31 @@
 # Core Concepts
 
-This page covers the fundamental types in goflux and the rules that govern how they interact.
+This page covers every core type in goflux and the rules that govern how they interact.
 
 ## Message[T]
 
-`Message[T]` is the unit passed to every handler. It carries two fields:
+`Message[T]` is the unit passed to every handler. It carries the routing key, a fully decoded payload, optional headers, and acknowledgment controls:
 
 ```go
 type Message[T any] struct {
     Subject string `json:"subject"`
     Payload T      `json:"payload"`
+    Header  Header `json:"header,omitempty"`
+    // unexported: acker Acker
 }
 ```
 
-- **Subject** -- the routing key (e.g. a NATS subject, an HTTP path segment, or a channel topic name).
-- **Payload** -- the fully decoded value. Transports decode at the boundary; handlers never see raw bytes.
-
-Use `NewMessage` to construct a message:
+Use the constructors to create messages:
 
 ```go
 msg := goflux.NewMessage("orders.created", OrderEvent{ID: "42", Total: 99.95})
+
+// With headers:
+h := goflux.Header{"X-Tenant": {"acme"}}
+msg := goflux.NewMessageWithHeader("orders.created", event, h)
 ```
+
+Messages expose acknowledgment methods -- `Ack()`, `Nak()`, `NakWithDelay(d)`, and `Term()`. These are no-ops on transports that do not support acknowledgments (channels, NATS core). See [Acker](#acker) below.
 
 ## Handler[T]
 
@@ -31,12 +36,14 @@ type Handler[T any] func(ctx context.Context, msg Message[T]) error
 ```
 
 - Returning `nil` signals success.
-- Returning a non-nil error signals the transport to nack or requeue the message. The exact behaviour is transport-specific.
+- Returning a non-nil error signals failure. The exact consequence is transport-specific: fire-and-forget transports log and move on; JetStream transports can nak and redeliver.
 
 ```go
 handler := func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
-    fmt.Println("received:", msg.Payload.ID)
-    return nil
+    if msg.Payload.Total <= 0 {
+        return fmt.Errorf("invalid order total: %f", msg.Payload.Total)
+    }
+    return processOrder(ctx, msg.Payload)
 }
 ```
 
@@ -51,13 +58,10 @@ type Publisher[T any] interface {
 }
 ```
 
-- `Publish` serialises `v` via the transport's codec (if any) and delivers it to the subject.
-- `Close` releases underlying connections. The exact behaviour depends on the transport.
-- **The caller owns the connection.** Transport constructors for NATS and HTTP do not create or own their underlying connection; the caller connects and closes.
+The subject is specified at the call site, not at construction time. `Publish` serializes `v` via the transport's codec (if any) and delivers it:
 
 ```go
-bus := _chan.NewBus[OrderEvent]()
-pub := _chan.NewPublisher(bus)
+pub := gofluxnats.NewPublisher(conn, codec)
 
 err := pub.Publish(ctx, "orders.created", OrderEvent{ID: "42"})
 ```
@@ -78,19 +82,158 @@ type Subscriber[T any] interface {
 :::
 
 ```go
-sub, err := _chan.NewSubscriber(bus, 8)
+sub := gofluxnats.NewSubscriber(conn, codec)
+
+go func() {
+    if err := sub.Subscribe(ctx, "orders.created", handler); err != nil {
+        slog.Error("subscriber exited", "error", err)
+    }
+}()
+```
+
+## Consumer[T]
+
+`Consumer[T]` is the pull-based counterpart to `Subscriber[T]`. Instead of pushing messages to a handler, the caller fetches batches at its own pace:
+
+```go
+type Consumer[T any] interface {
+    Fetch(ctx context.Context, n int) ([]Message[T], error)
+    Close() error
+}
+```
+
+`Fetch` blocks until at least one message is available or the context is cancelled. Each fetched message **must** be explicitly acknowledged:
+
+```go
+consumer := jetstream.NewConsumer[OrderEvent](js, codec, consumerConfig)
+
+msgs, err := consumer.Fetch(ctx, 10)
 if err != nil {
     return err
 }
 
+for _, msg := range msgs {
+    if err := processOrder(ctx, msg.Payload); err != nil {
+        _ = msg.Nak()
+        continue
+    }
+    _ = msg.Ack()
+}
+```
+
+## Requester[Req, Resp] and Responder[Req, Resp]
+
+Request-reply uses two paired interfaces:
+
+```go
+type Requester[Req, Resp any] interface {
+    Request(ctx context.Context, subject string, req Req) (Resp, error)
+    Close() error
+}
+
+type RequestHandler[Req, Resp any] func(ctx context.Context, req Req) (Resp, error)
+
+type Responder[Req, Resp any] interface {
+    Serve(ctx context.Context, subject string, handler RequestHandler[Req, Resp]) error
+    Close() error
+}
+```
+
+The requester sends a typed request and blocks until a typed response arrives. The responder processes incoming requests and returns responses. `Serve` blocks like `Subscribe`:
+
+```go
+// Responder side
+responder := gofluxnats.NewResponder[GetOrderReq, GetOrderResp](conn, reqCodec, respCodec)
+
 go func() {
-    _ = sub.Subscribe(ctx, "orders.created", handler)
+    _ = responder.Serve(ctx, "orders.get", func(ctx context.Context, req GetOrderReq) (GetOrderResp, error) {
+        order, err := db.FindOrder(ctx, req.OrderID)
+        if err != nil {
+            return GetOrderResp{}, err
+        }
+        return GetOrderResp{Order: order}, nil
+    })
 }()
+
+// Requester side
+requester := gofluxnats.NewRequester[GetOrderReq, GetOrderResp](conn, reqCodec, respCodec)
+
+resp, err := requester.Request(ctx, "orders.get", GetOrderReq{OrderID: "42"})
+```
+
+## Header
+
+`Header` carries message metadata -- trace context, message IDs, custom key-value pairs. It follows `http.Header` semantics: keys are case-sensitive, values are string slices.
+
+```go
+type Header map[string][]string
+```
+
+```go
+h := make(goflux.Header)
+h.Set("X-Tenant", "acme")
+h.Add("X-Tag", "priority")
+h.Add("X-Tag", "express")
+
+tenant := h.Get("X-Tenant") // "acme"
+h.Del("X-Tag")
+
+copy := h.Clone() // deep copy
+```
+
+Transports propagate headers automatically. NATS maps them to NATS headers; HTTP maps them to HTTP headers.
+
+## Acker
+
+`Acker` is the minimal acknowledgment interface for transports that support at-least-once delivery:
+
+```go
+type Acker interface {
+    Ack() error
+    Nak() error
+}
+```
+
+Two extended interfaces add more control:
+
+```go
+// Redeliver after a delay.
+type DelayedNaker interface {
+    Acker
+    NakWithDelay(d time.Duration) error
+}
+
+// Permanently reject -- the message will not be redelivered.
+type Terminator interface {
+    Acker
+    Term() error
+}
+```
+
+`Message[T]` exposes these through convenience methods that gracefully degrade:
+
+| Method | Has Acker | Has DelayedNaker | Has Terminator |
+|--------|-----------|-------------------|----------------|
+| `msg.Ack()` | calls `Ack()` | calls `Ack()` | calls `Ack()` |
+| `msg.Nak()` | calls `Nak()` | calls `Nak()` | calls `Nak()` |
+| `msg.NakWithDelay(d)` | falls back to `Nak()` | calls `NakWithDelay(d)` | falls back to `Nak()` |
+| `msg.Term()` | falls back to `Ack()` | falls back to `Ack()` | calls `Term()` |
+
+If the message has no acker at all (fire-and-forget transports), every method is a no-op.
+
+Use `msg.HasAcker()` to check at runtime whether acknowledgment is available.
+
+### AutoAck Middleware
+
+For handlers that should always ack on success and nak on error, use the `AutoAck` middleware instead of manual calls:
+
+```go
+wrapped := goflux.AutoAck[OrderEvent]()(handler)
 ```
 
 ## Topic[T]
 
-`Topic[T]` is a convenience struct that bundles a `Publisher[T]` and a `Subscriber[T]` for services that need to both produce and consume the same message type:
+`Topic[T]` bundles a `Publisher[T]` and `Subscriber[T]` for services that need both:
 
 ```go
 type Topic[T any] struct {
@@ -105,67 +248,64 @@ topic := goflux.Topic[OrderEvent]{
     Subscriber: sub,
 }
 
-// Use as a publisher
-topic.Publish(ctx, "orders", event)
+// Publish through the topic.
+_ = topic.Publish(ctx, "orders", event)
 
-// Use as a subscriber
+// Subscribe through the topic.
 go func() {
     _ = topic.Subscribe(ctx, "orders", handler)
 }()
 ```
 
-## ToChan[T]
+## BoundPublisher[T]
 
-`ToChan` bridges a `Subscriber[T]` into a plain Go channel. It launches `Subscribe` in a goroutine and forwards each message payload into a buffered channel:
-
-```go
-func ToChan[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) <-chan T
-```
-
-- `bufSize` controls backpressure: a full buffer blocks the subscriber's handler until the consumer reads.
-- The returned channel closes when `ctx` is cancelled.
+`BoundPublisher[T]` wraps a `Publisher[T]` with a fixed subject, removing the subject parameter from `Publish`:
 
 ```go
-bus := _chan.NewBus[OrderEvent]()
-sub, _ := _chan.NewSubscriber(bus, 8)
+pub := gofluxnats.NewPublisher(conn, codec)
+bound := goflux.Bind(pub, "orders.created")
 
-ch := goflux.ToChan(ctx, sub, "orders", 16)
-
-for event := range ch {
-    fmt.Println("got order:", event.ID)
-}
+// No subject argument needed.
+err := bound.Publish(ctx, OrderEvent{ID: "42"})
 ```
 
-## Context Helpers
+Note that `BoundPublisher` does not implement `Publisher[T]` -- its `Publish` method has a different signature (no subject parameter).
 
-goflux provides opt-in context utilities for message correlation:
+## Middleware[T]
+
+Middleware wraps a handler to add cross-cutting behavior:
 
 ```go
-// Attach a business-level message ID before publishing.
-ctx = goflux.WithMessageID(ctx, "order-42")
-
-// Read it back in a handler.
-id := goflux.MessageID(ctx)
+type Middleware[T any] func(Handler[T]) Handler[T]
 ```
 
-When set, the message ID is automatically:
-- Added to publish/process spans as `messaging.message.id`
-- Propagated via transport headers (`X-Message-ID` for HTTP, NATS headers)
+Compose multiple middleware with `Chain`. The first middleware in the list is the outermost wrapper:
 
-See [Telemetry](./telemetry.md#message-id) for details.
+```go
+wrapped := goflux.Chain[OrderEvent](
+    goflux.Process[OrderEvent](10),       // concurrency limit
+    goflux.Throttle[OrderEvent](time.Second), // rate limit
+    goflux.AutoAck[OrderEvent](),          // auto-ack on success
+)(handler)
+```
 
-## Key Rules
+See [Middleware](../middleware/) for the full list: `Process`, `Peek`, `Distinct`, `Skip`, `Take`, `Throttle`, `AutoAck`.
+
+## Key Design Rules
 
 ::: tip Rules to Remember
-1. **Subscribe blocks.** Always run it in a goroutine.
-2. **Caller owns connections.** Transport constructors do not create or close underlying connections (NATS `*nats.Conn`, HTTP `*http.Client`).
-3. **Close semantics vary.** `Close()` on `FanOut`, `FanIn`, `RoundRobin`, and `chan/` types is a no-op. NATS transports call `conn.Drain()`. Check the transport documentation.
+1. **Subscribe and Serve block.** Always run them in a goroutine.
+2. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
+3. **Close semantics vary.** `Close()` on `FanOut`, `FanIn`, `RoundRobin`, and channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
 4. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
 5. **Codecs are stateless.** Share them freely across publishers and subscribers.
+6. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.
 :::
 
 ## What's Next
 
-- [Transports](./transports.md) -- choose between channels, NATS, and HTTP
-- [Pipelines](./pipelines.md) -- wire subscribers to publishers with filtering and transformation
-- [Middleware](./middleware.md) -- wrap handlers with cross-cutting behaviour
+- [Fire & Forget](./patterns/fire-and-forget.md) -- the simplest messaging pattern
+- [At-Least-Once](./patterns/at-least-once.md) -- acknowledgment-based delivery with JetStream
+- [Transports](../transports/channel.md) -- choose and configure a transport
+- [Middleware](../middleware/) -- wrap handlers with cross-cutting behavior
+- [Pipeline](../pipeline/) -- wire subscribers to publishers with filtering and transformation

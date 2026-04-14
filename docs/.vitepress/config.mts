@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
 	title: 'goflux',
-	description: 'Type-safe pub/sub messaging for Go',
+	description: 'Generic, transport-agnostic messaging patterns for Go',
 	lang: "en-US",
 	lastUpdated: true,
 	appearance: "dark",
@@ -18,8 +18,9 @@ export default defineConfig({
 		outline: [2, 4],
 		nav: [
 			{ text: 'Guide', link: '/guide/introduction' },
-			{ text: 'Examples', link: '/examples/' },
-			{ text: 'API', link: '/api/' },
+			{ text: 'Patterns', link: '/guide/patterns/fire-and-forget' },
+			{ text: 'Transports', link: '/transports/channel' },
+			{ text: 'Reference', link: '/reference/' },
 		],
 		sidebar: [
 			{
@@ -28,28 +29,46 @@ export default defineConfig({
 					{ text: 'Introduction', link: '/guide/introduction' },
 					{ text: 'Getting Started', link: '/guide/getting-started' },
 					{ text: 'Core Concepts', link: '/guide/core-concepts' },
-					{ text: 'Transports', link: '/guide/transports' },
-					{ text: 'Pipelines', link: '/guide/pipelines' },
-					{ text: 'Middleware', link: '/guide/middleware' },
-					{ text: 'Distribution', link: '/guide/distribution' },
-					{ text: 'Telemetry', link: '/guide/telemetry' },
 				],
 			},
 			{
-				text: 'Examples',
+				text: 'Patterns',
 				items: [
-					{ text: 'Overview', link: '/examples/' },
-					{ text: 'Basic Pub/Sub', link: '/examples/basic-pubsub' },
-					{ text: 'NATS Pipeline', link: '/examples/nats-pipeline' },
-					{ text: 'HTTP Webhook', link: '/examples/http-webhook' },
-					{ text: 'Fan Patterns', link: '/examples/fan-patterns' },
-					{ text: 'Middleware Chain', link: '/examples/middleware-chain' },
+					{ text: 'Fire & Forget', link: '/guide/patterns/fire-and-forget' },
+					{ text: 'At-Least-Once', link: '/guide/patterns/at-least-once' },
+					{ text: 'Pull Consumer', link: '/guide/patterns/pull-consumer' },
+					{ text: 'Request-Reply', link: '/guide/patterns/request-reply' },
+					{ text: 'Queue Groups', link: '/guide/patterns/queue-groups' },
+					{ text: 'Fan-Out & Fan-In', link: '/guide/patterns/fan-out-fan-in' },
+					{ text: 'Headers', link: '/guide/patterns/headers' },
+				],
+			},
+			{
+				text: 'Transports',
+				items: [
+					{ text: 'Channel', link: '/transports/channel' },
+					{ text: 'NATS', link: '/transports/nats' },
+					{ text: 'JetStream', link: '/transports/jetstream' },
+					{ text: 'HTTP', link: '/transports/http' },
+				],
+			},
+			{
+				text: 'Composition',
+				items: [
+					{ text: 'Middleware', link: '/middleware/' },
+					{ text: 'Pipeline', link: '/pipeline/' },
+				],
+			},
+			{
+				text: 'Observability',
+				items: [
+					{ text: 'Telemetry', link: '/telemetry/' },
 				],
 			},
 			{
 				text: 'API',
 				items: [
-					{ text: 'Reference', link: '/api/' },
+					{ text: 'Reference', link: '/reference/' },
 				],
 			},
 			{
@@ -108,7 +127,7 @@ export default defineConfig({
 			'meta',
 			{
 				property: 'og:description',
-				content: 'Type-safe pub/sub messaging for Go',
+				content: 'Generic, transport-agnostic messaging patterns for Go',
 			},
 		],
 		['meta', { name: 'twitter:card', content: 'summary_large_image' }],

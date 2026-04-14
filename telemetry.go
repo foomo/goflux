@@ -212,6 +212,81 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 	return err
 }
 
+// RecordFetch opens a consumer span for a pull-based fetch operation.
+func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semconvmsg.SystemAttr, count int, fn func(context.Context) error) error {
+	attrs := []attribute.KeyValue{
+		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
+		attribute.Int("messaging.batch.message_count", count),
+	}
+	if id := MessageID(ctx); id != "" {
+		attrs = append(attrs, attribute.String("goflux.message.id", id))
+	}
+
+	ctx, span := t.tracer.Start(ctx, "goflux.fetch",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attrs...),
+	)
+	defer span.End()
+
+	start := time.Now()
+	err := fn(ctx)
+	s := msFloat(start)
+
+	errType := errorType(err)
+	t.consumedMessages.Add(ctx, int64(count),
+		"receive",
+		system,
+		t.consumedMessages.AttrDestinationName(subject),
+		t.consumedMessages.AttrErrorType(errType),
+	)
+	t.processDuration.Record(ctx, s,
+		"process",
+		system,
+		t.processDuration.AttrDestinationName(subject),
+		t.processDuration.AttrErrorType(errType),
+	)
+	recordSpanResult(span, err)
+
+	return err
+}
+
+// RecordRequest opens a client span for a request-reply call.
+func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system semconvmsg.SystemAttr, fn func(context.Context) error) error {
+	attrs := []attribute.KeyValue{
+		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
+	}
+	if id := MessageID(ctx); id != "" {
+		attrs = append(attrs, attribute.String("goflux.message.id", id))
+	}
+
+	ctx, span := t.tracer.Start(ctx, "goflux.request",
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attrs...),
+	)
+	defer span.End()
+
+	start := time.Now()
+	err := fn(ctx)
+	s := msFloat(start)
+
+	errType := errorType(err)
+	t.sentMessages.Add(ctx, 1,
+		"publish",
+		system,
+		t.sentMessages.AttrDestinationName(subject),
+		t.sentMessages.AttrErrorType(errType),
+	)
+	t.publishDuration.Record(ctx, s,
+		"publish",
+		system,
+		t.publishDuration.AttrDestinationName(subject),
+		t.publishDuration.AttrErrorType(errType),
+	)
+	recordSpanResult(span, err)
+
+	return err
+}
+
 // RegisterLag registers the goflux.consumer.lag observable gauge.
 // Uses the meter provider that was passed to [NewTelemetry].
 func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int64ObservableGauge, error) {

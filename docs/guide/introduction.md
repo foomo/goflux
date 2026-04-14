@@ -2,57 +2,67 @@
 
 ## What is goflux?
 
-goflux is a generic, transport-agnostic pub/sub messaging library for Go. It is part of the [foomo](https://github.com/foomo) ecosystem and designed for microservices running on Kubernetes.
+goflux is a Go library that provides generic, type-safe abstractions over common messaging patterns. It is part of the [foomo](https://github.com/foomo) ecosystem.
 
-The library provides a thin, composable layer over message transports -- Go channels, NATS, and HTTP -- so that business logic handlers are written once against stable interfaces and transports can be swapped without touching handler code.
+Business logic is written against a small set of core interfaces -- `Publisher[T]`, `Subscriber[T]`, `Consumer[T]`, `Requester[Req, Resp]`, and `Responder[Req, Resp]`. Transport-specific configuration stays in the transport layer, and transports can be swapped without touching handler code.
+
+```go
+// The Publisher interface -- one method, fully generic.
+type Publisher[T any] interface {
+    Publish(ctx context.Context, subject string, v T) error
+    Close() error
+}
+```
+
+Every message is `Message[T]` -- fully decoded at the transport boundary. No raw bytes leak into handlers.
 
 ## Design Philosophy
 
-- **Interfaces over implementations** -- `Publisher[T]` and `Subscriber[T]` are small interfaces. Transports implement them; your code depends only on the interfaces.
-- **Generics for type safety** -- every message is `Message[T]`, fully decoded at the transport boundary. No raw bytes leak into handler code.
-- **Composition over configuration** -- pipelines, middleware, fan-out, and fan-in are plain functions that compose with each other. There is no framework to configure.
-- **Telemetry by default** -- OpenTelemetry tracing and metrics are built into every transport. No opt-in required.
+- **Interfaces over implementations.** Core types are small interfaces. Transports implement them; your code depends only on the interfaces.
+- **Generics for type safety.** `Message[T]` carries a decoded payload. The compiler catches type mismatches, not runtime panics.
+- **Composition over configuration.** Pipelines, middleware, fan-out, and fan-in are plain functions that compose with each other. There is no framework to configure.
+- **Caller owns connections.** Transport constructors accept an existing connection (e.g. `*nats.Conn`). The caller connects and closes; the transport never manages lifecycle behind your back.
+- **Telemetry by default.** OpenTelemetry tracing and metrics are built into every transport. No opt-in required, no middleware to wire.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    P[Your Code] -->|Publish| Pub[Publisher‹T›]
-    Pub --> Transport["Transport\n(chan / NATS / HTTP)"]
-    Transport --> Sub[Subscriber‹T›]
-    Sub -->|Dispatch| H[Handler‹T›]
-    MW[Middleware‹T›] -.->|wraps| H
+goflux is organized into five layers. Each layer depends only on the one above it:
+
+```
++------------------------------------------------------------+
+| Core Interfaces                                            |
+| Publisher, Subscriber, Consumer, Requester, Responder,     |
+| Handler, Message, Header, Acker                            |
++------------------------------------------------------------+
+| Transports                                                 |
+| channel (in-process), nats (NATS core),                    |
+| jetstream (NATS JetStream), http (HTTP POST)               |
++------------------------------------------------------------+
+| Middleware                                                  |
+| Process, Peek, Distinct, Skip, Take, Throttle, AutoAck    |
++------------------------------------------------------------+
+| Pipeline Operators                                         |
+| Pipe, PipeMap, FanOut, FanIn, RoundRobin                   |
++------------------------------------------------------------+
+| Telemetry                                                  |
+| OTel tracing + metrics, context propagation, message ID    |
++------------------------------------------------------------+
 ```
 
-A **Publisher** serialises and sends messages. A **Subscriber** receives messages, decodes them, and dispatches them to a **Handler**. **Middleware** wraps handlers to add cross-cutting behaviour such as concurrency limiting, deduplication, or rate limiting. The transport layer is the only part that changes when you switch from in-process channels to NATS or HTTP.
+Your code lives at the top -- it depends on core interfaces and optionally uses middleware and pipeline operators. The transport layer is the only part that changes when you switch from in-process channels to NATS, JetStream, or HTTP.
 
-## When to Use goflux
+## Supported Patterns
 
-- You need to **decouple producers and consumers** within or across services.
-- You want to **swap transports** (e.g. channels in tests, NATS in production) without rewriting business logic.
-- You want **built-in observability** -- every publish and process operation is traced and metered automatically.
-- You prefer **type-safe messaging** over untyped byte slices.
-
-## Package Overview
-
-| Package | Import | Purpose |
-|---------|--------|---------|
-| `goflux` | `github.com/foomo/goflux` | Core interfaces, pipeline helpers, middleware, distribution operators |
-| `chan` | `github.com/foomo/goflux/chan` | In-process channel transport (no codec, backpressure) |
-| `nats` | `github.com/foomo/goflux/nats` | NATS core transport |
-| `http` | `github.com/foomo/goflux/http` | HTTP POST transport |
-| `testing` | `github.com/foomo/goflux/testing` | Test helpers (`GoAsync`, `GoSync`) |
-
-::: tip
-The `chan` package uses Go's reserved word as its directory name. Import it with an alias:
-
-```go
-import _chan "github.com/foomo/goflux/chan"
-```
-:::
+| Pattern | Description | Transports |
+|---------|-------------|------------|
+| Fire-and-forget | Publish and move on, no delivery guarantee | channel, nats, http |
+| At-least-once | Messages are acked/naked; redelivered on failure | jetstream |
+| Pull-based | Consumer fetches batches at its own pace | jetstream |
+| Request-reply | Send a request, wait for a typed response | nats, http |
+| Queue groups | Load-balance messages across subscriber instances | nats, jetstream |
+| Fan-out / Fan-in | Broadcast to N publishers or merge N subscribers | all (pipeline operators) |
 
 ## What's Next
 
 - [Getting Started](./getting-started.md) -- install goflux and run your first example
-- [Core Concepts](./core-concepts.md) -- learn the fundamental types and rules
-- [Transports](./transports.md) -- choose and configure a transport
+- [Core Concepts](./core-concepts.md) -- learn the fundamental types and design rules

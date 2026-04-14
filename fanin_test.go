@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/foomo/goflux"
-	"github.com/foomo/goflux/pkg/channel"
+	"github.com/foomo/goflux/transport/channel"
 	"github.com/foomo/gofuncy"
 )
 

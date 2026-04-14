@@ -8,7 +8,7 @@ package goflux_test
 //
 // 	"github.com/foomo/goflux"
 // 	"github.com/foomo/goflow"
-// 	"github.com/foomo/goflux/pkg/channel"
+// 	"github.com/foomo/goflux/transport/channel"
 // )
 //
 // // ExampleToChan demonstrates bridging a Subscriber into a plain channel.
