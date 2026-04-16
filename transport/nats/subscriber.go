@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -48,7 +49,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 			msgCtx = goflux.WithMessageID(msgCtx, id)
 		}
 
-		m := goflux.Message[T]{Subject: msg.Subject, Payload: v, Header: goflux.Header(msg.Header)}
+		m := goflux.Message[T]{Subject: msg.Subject, Payload: v, Header: extractGofluxHeaders(msg.Header)}
 
 		if err := s.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
 			trace.SpanFromContext(ctx).SetAttributes(
@@ -77,7 +78,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 	}
 
 	if err != nil {
-		return fmt.Errorf("nats subscriber: %w", err)
+		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("nats: %w", err))
 	}
 
 	<-ctx.Done()
@@ -85,4 +86,6 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 	return sub.Unsubscribe()
 }
 
-func (s *Subscriber[T]) Close() error { return s.conn.Drain() }
+// Close is a no-op. The caller owns the *nats.Conn and is responsible for
+// draining or closing it.
+func (s *Subscriber[T]) Close() error { return nil }

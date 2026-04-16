@@ -22,7 +22,7 @@ func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) (*Subscriber
 
 	s := &Subscriber[T]{bus: bus, bufSize: bufSize, tel: cfg.tel}
 	if _, err := s.tel.RegisterLag("go_channel", s.Len); err != nil {
-		return nil, fmt.Errorf("stream: register lag gauge: %w", err)
+		return nil, fmt.Errorf("channel subscriber: register lag gauge: %w", err)
 	}
 
 	return s, nil

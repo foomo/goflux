@@ -33,8 +33,8 @@ func WithDeadLetter[T any](fn DeadLetterFunc[T]) PipeOption[T] {
 
 // Pipe returns a Handler[T] that forwards every accepted message to pub.
 // Filters run first; a dropped message never reaches pub.
-// A publish error is returned to the subscriber as-is — wrap pub with
-// NewRetryPublisher to add retry/backoff before that error surfaces.
+// A publish error is returned to the caller as-is. Acknowledgment is
+// not performed — use [AutoAck] or [Processor] to manage ack/nak.
 func Pipe[T any](pub Publisher[T], opts ...PipeOption[T]) Handler[T] {
 	cfg := buildConfig(opts)
 

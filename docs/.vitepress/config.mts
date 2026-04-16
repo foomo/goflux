@@ -29,6 +29,7 @@ export default defineConfig({
 					{ text: 'Introduction', link: '/guide/introduction' },
 					{ text: 'Getting Started', link: '/guide/getting-started' },
 					{ text: 'Core Concepts', link: '/guide/core-concepts' },
+					{ text: 'goflow Integration', link: '/guide/goflow-integration' },
 				],
 			},
 			{
@@ -40,6 +41,7 @@ export default defineConfig({
 					{ text: 'Request-Reply', link: '/guide/patterns/request-reply' },
 					{ text: 'Queue Groups', link: '/guide/patterns/queue-groups' },
 					{ text: 'Fan-Out & Fan-In', link: '/guide/patterns/fan-out-fan-in' },
+					{ text: 'Stream Processing', link: '/guide/patterns/stream-processor' },
 					{ text: 'Headers', link: '/guide/patterns/headers' },
 				],
 			},

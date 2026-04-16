@@ -1,6 +1,10 @@
 # Pipeline Operators
 
-Pipeline operators wire subscribers to publishers, composing `Handler[T]` and `Publisher[T]` into message-processing topologies. They handle filtering, transformation, fan-out, fan-in, and round-robin distribution.
+Pipeline operators wire subscribers to publishers, composing `Handler[T]` and `Publisher[T]` into message-processing topologies. They handle filtering, transformation, and bridging to [goflow](https://github.com/foomo/goflow) streams.
+
+::: tip Stream Processing
+For fan-out, fan-in, round-robin, and other stream-processing patterns use [goflow](https://github.com/foomo/goflow) operators via the `ToStream` / `FromStream` bridge functions.
+:::
 
 ## Pipe
 
@@ -83,56 +87,45 @@ handler := goflux.PipeMap[RawEvent, CleanEvent](
 err := sub.Subscribe(ctx, "events.raw", handler)
 ```
 
-## FanOut
+## ToStream
 
 ```go
-func FanOut[T any](publishers []Publisher[T], opts ...FanOutOption[T]) Publisher[T]
+func ToStream[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) goflow.Stream[Message[T]]
 ```
 
-Returns a `Publisher[T]` that broadcasts every `Publish` call to all inner publishers. By default, errors from individual publishers are joined via `errors.Join` (best-effort). With `WithFanOutAllOrNothing`, the first error short-circuits.
+Bridges a `Subscriber[T]` into a `goflow.Stream`. All [goflow](https://github.com/foomo/goflow) operators (Filter, Map, Distinct, FanOut, etc.) can be applied to the returned stream.
 
 ```go
-broadcast := goflux.FanOut[Event]([]goflux.Publisher[Event]{pubA, pubB, pubC})
+stream := goflux.ToStream[Event](ctx, sub, "orders.>", 16)
 
-err := broadcast.Publish(ctx, "events.order", event)
+// Apply goflow operators
+stream.
+    Filter(func(ctx context.Context, msg goflux.Message[Event]) bool {
+        return msg.Payload.Total > 100
+    }).
+    Process(4, func(ctx context.Context, msg goflux.Message[Event]) error {
+        return handleOrder(ctx, msg.Payload)
+    })
 ```
 
-With all-or-nothing semantics:
+## FromStream
 
 ```go
-broadcast := goflux.FanOut[Event](
-    []goflux.Publisher[Event]{pubA, pubB},
-    goflux.WithFanOutAllOrNothing[Event](),
-)
+func FromStream[T any](ctx context.Context, stream goflow.Stream[Message[T]], pub Publisher[T]) error
 ```
 
-## FanIn
+Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. Blocks until the stream is exhausted or the context is cancelled.
 
 ```go
-func FanIn[T any](subscribers ...Subscriber[T]) Subscriber[T]
-```
+stream := goflux.ToStream[RawEvent](ctx, sub, "events.raw", 16)
 
-Returns a `Subscriber[T]` that subscribes to the same subject on all provided subscribers and dispatches every message to a single handler. `Subscribe` blocks until all inner subscriptions complete.
+// Transform with goflow, then publish to a different transport
+mapped := goflow.Map(stream, func(ctx context.Context, msg goflux.Message[RawEvent]) (goflux.Message[RawEvent], error) {
+    msg.Payload.Processed = true
+    return msg, nil
+})
 
-```go
-merged := goflux.FanIn[Event](subNATS, subHTTP)
-
-err := merged.Subscribe(ctx, "events.>", handler)
-```
-
-## RoundRobin
-
-```go
-func RoundRobin[T any](publishers ...Publisher[T]) Publisher[T]
-```
-
-Returns a `Publisher[T]` that distributes each `Publish` call to a single inner publisher, cycling through them via an atomic counter.
-
-```go
-loadBalanced := goflux.RoundRobin[Event](pub1, pub2, pub3)
-
-// First call goes to pub1, second to pub2, third to pub3, fourth to pub1, ...
-err := loadBalanced.Publish(ctx, "events.order", event)
+err := goflux.FromStream(ctx, mapped, pub)
 ```
 
 ## BoundPublisher
@@ -144,30 +137,45 @@ func Bind[T any](pub Publisher[T], subject string) *BoundPublisher[T]
 Wraps a `Publisher[T]` with a fixed subject. Useful when a component always publishes to the same destination and the subject should not leak into business logic.
 
 ```go
-orderPub := goflux.Bind(pub, "orders.created")
+orderPub := goflux.Bind[OrderEvent](pub, "orders.created")
 
-// No subject argument needed
-err := orderPub.Publish(ctx, event)
+// The subject argument is ignored -- "orders.created" is always used
+err := orderPub.Publish(ctx, "", event)
 ```
 
-`BoundPublisher` exposes `Publish(ctx, v)` (no subject parameter) and delegates `Close()` to the underlying publisher.
+`BoundPublisher` implements `Publisher[T]` — the subject parameter in `Publish` is ignored. `Close()` delegates to the underlying publisher.
 
 ## ToChan
 
 ```go
-func ToChan[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) <-chan T
+func ToChan[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) <-chan Message[T]
 ```
 
-Bridges a `Subscriber[T]` into a plain Go channel. Launches `Subscribe` in a goroutine and forwards each message payload into a buffered channel. The returned channel closes when `ctx` is cancelled.
+Bridges a `Subscriber[T]` into a plain Go channel. Launches `Subscribe` in a goroutine and forwards each `Message[T]` (including acker) into a buffered channel. The returned channel closes when `ctx` is cancelled.
 
 ```go
-ch := goflux.ToChan(ctx, sub, "orders.>", 16)
+ch := goflux.ToChan[Event](ctx, sub, "orders.>", 16)
 
-for event := range ch {
-    fmt.Println("order:", event.ID)
+for msg := range ch {
+    fmt.Println("order:", msg.Payload.ID)
 }
 ```
 
-::: warning Ownership
-`Close()` on `FanOut`, `FanIn`, and `RoundRobin` is a **no-op**. The caller owns the inner publishers and subscribers and is responsible for closing them.
-:::
+## RetryPublisher
+
+```go
+func RetryPublisher[T any](pub Publisher[T], maxAttempts int, backoff BackoffFunc) Publisher[T]
+
+type BackoffFunc func(attempt int) time.Duration
+```
+
+Wraps a `Publisher[T]` with retry logic. On publish failure, retries up to `maxAttempts` times with delays determined by `backoff`. Context cancellation aborts the retry loop immediately. If all attempts fail, the last error is returned.
+
+```go
+retrying := goflux.RetryPublisher[Event](pub, 3, func(attempt int) time.Duration {
+    return time.Duration(attempt+1) * time.Second // 1s, 2s, 3s
+})
+
+err := retrying.Publish(ctx, "events.order", event)
+```
+

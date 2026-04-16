@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -71,14 +72,14 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 
 			b, encErr := r.respCodec.Encode(resp)
 			if encErr != nil {
-				return fmt.Errorf("nats responder encode: %w", encErr)
+				return errors.Join(goflux.ErrEncode, fmt.Errorf("nats: %w", encErr))
 			}
 
 			return msg.Respond(b)
 		}, goflux.WithRemoteSpanContext(remoteSpanCtx))
 	})
 	if err != nil {
-		return fmt.Errorf("nats responder: %w", err)
+		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("nats: %w", err))
 	}
 
 	<-ctx.Done()
@@ -86,5 +87,6 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 	return sub.Unsubscribe()
 }
 
-// Close drains the underlying NATS connection.
-func (r *Responder[Req, Resp]) Close() error { return r.conn.Drain() }
+// Close is a no-op. The caller owns the *nats.Conn and is responsible for
+// draining or closing it.
+func (r *Responder[Req, Resp]) Close() error { return nil }

@@ -3,9 +3,11 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/foomo/goencode"
@@ -55,7 +57,7 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 	err := r.tel.RecordRequest(ctx, subject, system, func(ctx context.Context) error {
 		b, encErr := r.reqCodec.Encode(req)
 		if encErr != nil {
-			return fmt.Errorf("http requester encode: %w", encErr)
+			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("http: %w", encErr))
 		}
 
 		trace.SpanFromContext(ctx).SetAttributes(
@@ -63,11 +65,11 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 			attribute.String("messaging.operation.type", "publish"),
 		)
 
-		url := r.baseURL + "/" + subject
+		target := r.baseURL + "/" + url.PathEscape(subject)
 
-		httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+		httpReq, buildErr := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(b))
 		if buildErr != nil {
-			return fmt.Errorf("http requester build request: %w", buildErr)
+			return errors.Join(goflux.ErrPublish, goflux.ErrTransport, fmt.Errorf("http: %w", buildErr))
 		}
 
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -79,21 +81,21 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 
 		httpResp, doErr := r.httpClient.Do(httpReq)
 		if doErr != nil {
-			return fmt.Errorf("http requester send: %w", doErr)
+			return errors.Join(goflux.ErrPublish, goflux.ErrTransport, fmt.Errorf("http: %w", doErr))
 		}
 		defer httpResp.Body.Close()
 
 		respBody, readErr := io.ReadAll(io.LimitReader(httpResp.Body, 1<<20))
 		if readErr != nil {
-			return fmt.Errorf("http requester read response: %w", readErr)
+			return errors.Join(goflux.ErrTransport, fmt.Errorf("http: %w", readErr))
 		}
 
 		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-			return fmt.Errorf("http requester: server returned %d for %s", httpResp.StatusCode, url)
+			return errors.Join(goflux.ErrTransport, fmt.Errorf("http: server returned %d for %s", httpResp.StatusCode, target))
 		}
 
 		if decErr := r.respCodec.Decode(respBody, &result); decErr != nil {
-			return fmt.Errorf("http requester decode response: %w", decErr)
+			return errors.Join(goflux.ErrDecode, fmt.Errorf("http: %w", decErr))
 		}
 
 		return nil

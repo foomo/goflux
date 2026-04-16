@@ -21,9 +21,7 @@ func applyOpts(opts []Option) *config {
 		o(cfg)
 	}
 
-	if cfg.tel == nil {
-		cfg.tel, _ = goflux.NewTelemetry()
-	}
+	cfg.tel = goflux.DefaultTelemetry(cfg.tel)
 
 	return cfg
 }

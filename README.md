@@ -16,20 +16,23 @@ Write business logic against core interfaces. Swap transports without touching h
 
 | Layer | What it provides |
 |-------|-----------------|
-| **Core Interfaces** | `Publisher[T]`, `Subscriber[T]`, `Consumer[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
+| **Core Interfaces** | `Publisher[T]`, `Subscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
 | **Transports** | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces |
-| **Middleware** | `Chain`, `Process`, `Peek`, `Distinct`, `Skip`, `Take`, `Throttle`, `AutoAck` |
-| **Pipeline Operators** | `Pipe`, `PipeMap`, `FanOut`, `FanIn`, `RoundRobin`, `BoundPublisher` |
+| **Middleware** | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader` |
+| **Pipeline Operators** | `Pipe`, `PipeMap`, `ToStream`, `FromStream`, `ToChan`, `BoundPublisher`, `RetryPublisher` |
+| **Stream Processing** | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow) |
+| **Lifecycle** | `Group` — coordinated startup, fail-fast shutdown for multiple handlers |
 | **Telemetry** | OpenTelemetry tracing and metrics built into every transport |
 
 ## Supported Patterns
 
 - **Fire & Forget** — publish with no delivery guarantee (channels, NATS core)
 - **At-Least-Once** — ack/nak with auto-ack or manual control (JetStream)
-- **Pull Consumer** — fetch messages on demand with explicit ack (JetStream)
+- **Pull Consumer** — JetStream pull consumers via `Subscriber[T]` with middleware composition (JetStream)
 - **Request-Reply** — typed request/response (NATS, HTTP)
 - **Queue Groups** — competing consumers (NATS)
-- **Fan-Out / Fan-In** — broadcast, merge, round-robin (any transport)
+- **Stream Processing** — bridge to [goflow](https://github.com/foomo/goflow) via `ToStream`/`FromStream` for bounded concurrency, filtering, dedup, fan-out/fan-in, and more
+- **Fan-Out / Fan-In** — broadcast, merge, round-robin via goflow stream operators
 
 ## Transport Feature Matrix
 
@@ -37,7 +40,6 @@ Write business logic against core interfaces. Swap transports without touching h
 |-----------|:-------:|:----:|:---------:|:----:|
 | `Publisher[T]` | yes | yes | yes | yes |
 | `Subscriber[T]` | yes | yes | yes | yes |
-| `Consumer[T]` | - | - | yes | - |
 | `Requester[Req, Resp]` | - | yes | - | yes |
 | `Responder[Req, Resp]` | - | yes | - | yes |
 

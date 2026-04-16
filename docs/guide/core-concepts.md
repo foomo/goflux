@@ -91,36 +91,6 @@ go func() {
 }()
 ```
 
-## Consumer[T]
-
-`Consumer[T]` is the pull-based counterpart to `Subscriber[T]`. Instead of pushing messages to a handler, the caller fetches batches at its own pace:
-
-```go
-type Consumer[T any] interface {
-    Fetch(ctx context.Context, n int) ([]Message[T], error)
-    Close() error
-}
-```
-
-`Fetch` blocks until at least one message is available or the context is cancelled. Each fetched message **must** be explicitly acknowledged:
-
-```go
-consumer := jetstream.NewConsumer[OrderEvent](js, codec, consumerConfig)
-
-msgs, err := consumer.Fetch(ctx, 10)
-if err != nil {
-    return err
-}
-
-for _, msg := range msgs {
-    if err := processOrder(ctx, msg.Payload); err != nil {
-        _ = msg.Nak()
-        continue
-    }
-    _ = msg.Ack()
-}
-```
-
 ## Requester[Req, Resp] and Responder[Req, Resp]
 
 Request-reply uses two paired interfaces:
@@ -283,20 +253,19 @@ Compose multiple middleware with `Chain`. The first middleware in the list is th
 
 ```go
 wrapped := goflux.Chain[OrderEvent](
-    goflux.Process[OrderEvent](10),       // concurrency limit
-    goflux.Throttle[OrderEvent](time.Second), // rate limit
-    goflux.AutoAck[OrderEvent](),          // auto-ack on success
+    middleware.AutoAck[OrderEvent](),
+    middleware.InjectMessageID[OrderEvent](),
 )(handler)
 ```
 
-See [Middleware](../middleware/) for the full list: `Process`, `Peek`, `Distinct`, `Skip`, `Take`, `Throttle`, `AutoAck`.
+See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`). For stream-processing operators (concurrency, filtering, deduplication, throttling), use [goflow](https://github.com/foomo/goflow) via `ToStream`.
 
 ## Key Design Rules
 
 ::: tip Rules to Remember
 1. **Subscribe and Serve block.** Always run them in a goroutine.
 2. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
-3. **Close semantics vary.** `Close()` on `FanOut`, `FanIn`, `RoundRobin`, and channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
+3. **Close semantics vary.** `Close()` on channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
 4. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
 5. **Codecs are stateless.** Share them freely across publishers and subscribers.
 6. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.

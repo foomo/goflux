@@ -32,7 +32,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
 )
@@ -53,8 +53,8 @@ func main() {
 	conn, _ := nats.Connect(nats.DefaultURL)
 	defer conn.Drain()
 
-	reqCodec := goencode.NewJSONCodec[OrderReq]()
-	respCodec := goencode.NewJSONCodec[OrderResp]()
+	reqCodec := json.NewCodec[OrderReq]()
+	respCodec := json.NewCodec[OrderResp]()
 
 	req := gofluxnats.NewRequester[OrderReq, OrderResp](conn, reqCodec, respCodec)
 	defer req.Close()
@@ -82,7 +82,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
 )
@@ -104,8 +104,8 @@ func main() {
 	conn, _ := nats.Connect(nats.DefaultURL)
 	defer conn.Drain()
 
-	reqCodec := goencode.NewJSONCodec[OrderReq]()
-	respCodec := goencode.NewJSONCodec[OrderResp]()
+	reqCodec := json.NewCodec[OrderReq]()
+	respCodec := json.NewCodec[OrderResp]()
 
 	res := gofluxnats.NewResponder[OrderReq, OrderResp](conn, reqCodec, respCodec)
 
@@ -127,8 +127,8 @@ The HTTP transport sends requests as POST to `{baseURL}/{subject}` and deseriali
 ### Requester
 
 ```go
-reqCodec := goencode.NewJSONCodec[OrderReq]()
-respCodec := goencode.NewJSONCodec[OrderResp]()
+reqCodec := json.NewCodec[OrderReq]()
+respCodec := json.NewCodec[OrderResp]()
 
 // Pass nil for *http.Client to use a default client with 10s timeout.
 req := gofluxhttp.NewRequester[OrderReq, OrderResp](
@@ -146,8 +146,8 @@ resp, err := req.Request(ctx, "orders.create", OrderReq{Item: "widget", Quantity
 The HTTP responder exposes a `*http.ServeMux` via the `Mux()` method. You mount this mux on your HTTP server -- the responder does not own the listener.
 
 ```go
-reqCodec := goencode.NewJSONCodec[OrderReq]()
-respCodec := goencode.NewJSONCodec[OrderResp]()
+reqCodec := json.NewCodec[OrderReq]()
+respCodec := json.NewCodec[OrderResp]()
 
 res := gofluxhttp.NewResponder[OrderReq, OrderResp](reqCodec, respCodec)
 

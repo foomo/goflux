@@ -1,5 +1,31 @@
 package nats
 
+import (
+	"strings"
+
+	"github.com/foomo/goflux"
+)
+
+const gofluxHeaderPrefix = "X-Goflux-"
+
+// extractGofluxHeaders extracts X-Goflux-* headers into a goflux.Header,
+// stripping the prefix. Returns nil if no goflux headers are present.
+func extractGofluxHeaders(h map[string][]string) goflux.Header {
+	var out goflux.Header
+
+	for k, vs := range h {
+		if strings.HasPrefix(k, gofluxHeaderPrefix) {
+			if out == nil {
+				out = make(goflux.Header)
+			}
+
+			out[strings.TrimPrefix(k, gofluxHeaderPrefix)] = append([]string(nil), vs...)
+		}
+	}
+
+	return out
+}
+
 // natsHeaderCarrier implements propagation.TextMapCarrier for NATS message
 // headers. We cannot use propagation.HeaderCarrier (which is http.Header)
 // because it canonicalizes keys via textproto.CanonicalMIMEHeaderKey —

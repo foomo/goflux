@@ -12,7 +12,6 @@ The HTTP transport sends messages as HTTP POST requests and receives them via an
 | `Subscriber[T]` | Yes |
 | `Requester[Req, Resp]` | Yes |
 | `Responder[Req, Resp]` | Yes |
-| `Consumer[T]` | No |
 
 ## Publisher
 

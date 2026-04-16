@@ -72,9 +72,7 @@ func NewSubscriber[T any](codec goencode.Codec[T], opts ...SubscriberOption) *Su
 		o(cfg)
 	}
 
-	if cfg.tel == nil {
-		cfg.tel, _ = goflux.NewTelemetry()
-	}
+	cfg.tel = goflux.DefaultTelemetry(cfg.tel)
 
 	return &Subscriber[T]{
 		mux:         http.NewServeMux(),
@@ -82,6 +80,14 @@ func NewSubscriber[T any](codec goencode.Codec[T], opts ...SubscriberOption) *Su
 		tel:         cfg.tel,
 		maxBodySize: cfg.maxBodySize,
 	}
+}
+
+func (s *Subscriber[T]) Mux() *http.ServeMux {
+	return s.mux
+}
+
+func (s *Subscriber[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mux.ServeHTTP(w, r)
 }
 
 // Subscribe registers handler for POST {basePath}/{subject} on the mux.

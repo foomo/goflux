@@ -2,6 +2,7 @@ package jetstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/foomo/goencode"
@@ -13,22 +14,22 @@ import (
 )
 
 type Publisher[T any] struct {
-	js         jetstream.JetStream
-	serializer goencode.Codec[T]
-	tel        *goflux.Telemetry
+	js    jetstream.JetStream
+	codec goencode.Codec[T]
+	tel   *goflux.Telemetry
 }
 
-func NewPublisher[T any](js jetstream.JetStream, serializer goencode.Codec[T], opts ...Option) *Publisher[T] {
+func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
-	return &Publisher[T]{js: js, serializer: serializer, tel: cfg.tel}
+	return &Publisher[T]{js: js, codec: codec, tel: cfg.tel}
 }
 
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
-		b, err := p.serializer.Encode(v)
+		b, err := p.codec.Encode(v)
 		if err != nil {
-			return fmt.Errorf("jetstream publisher encode: %w", err)
+			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("jetstream: %w", err))
 		}
 
 		trace.SpanFromContext(ctx).SetAttributes(
@@ -49,7 +50,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 		if h := goflux.HeaderFromContext(ctx); h != nil {
 			for k, vs := range h {
 				for _, v := range vs {
-					msg.Header.Add(k, v)
+					msg.Header.Add(gofluxHeaderPrefix+k, v)
 				}
 			}
 		}

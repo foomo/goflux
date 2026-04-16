@@ -12,7 +12,6 @@ The NATS transport wraps a `*nats.Conn` for core NATS pub/sub and request-reply.
 | `Subscriber[T]` | Yes |
 | `Requester[Req, Resp]` | Yes |
 | `Responder[Req, Resp]` | Yes |
-| `Consumer[T]` | No |
 
 ## Publisher
 

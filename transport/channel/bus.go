@@ -45,9 +45,12 @@ func (b *Bus[T]) unsubscribe(subject string, ch chan goflux.Message[T]) {
 // the publisher goroutine instead.
 func (b *Bus[T]) publish(ctx context.Context, subject string, msg goflux.Message[T]) error {
 	b.mu.RLock()
-	defer b.mu.RUnlock()
+	subs := b.subscribers[subject]
+	snapshot := make([]chan goflux.Message[T], len(subs))
+	copy(snapshot, subs)
+	b.mu.RUnlock()
 
-	for _, ch := range b.subscribers[subject] {
+	for _, ch := range snapshot {
 		select {
 		case ch <- msg:
 		case <-ctx.Done():

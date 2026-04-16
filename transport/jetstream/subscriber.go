@@ -2,6 +2,7 @@ package jetstream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -30,6 +31,12 @@ func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T], 
 	}
 }
 
+// Subscribe starts consuming messages and dispatching them to handler. The call
+// blocks until ctx is cancelled.
+//
+// Note: the subject parameter is used only for telemetry labeling. Actual
+// message filtering is determined by the jetstream.Consumer configuration
+// passed to [NewSubscriber].
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
 	cc, err := s.consumer.Consume(func(msg jetstream.Msg) {
 		var v T
@@ -57,7 +64,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		m := goflux.Message[T]{
 			Subject: msg.Subject(),
 			Payload: v,
-			Header:  goflux.Header(msg.Headers()),
+			Header:  extractGofluxHeaders(msg.Headers()),
 		}.WithAcker(&jsAcker{msg: msg})
 
 		if err := s.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
@@ -85,7 +92,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("jetstream subscriber: %w", err)
+		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("jetstream: %w", err))
 	}
 
 	<-ctx.Done()

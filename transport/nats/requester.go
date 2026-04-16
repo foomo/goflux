@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/foomo/goencode"
@@ -43,7 +44,7 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 	err := r.tel.RecordRequest(ctx, subject, system, func(ctx context.Context) error {
 		b, encErr := r.reqCodec.Encode(req)
 		if encErr != nil {
-			return fmt.Errorf("nats requester encode: %w", encErr)
+			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("nats: %w", encErr))
 		}
 
 		trace.SpanFromContext(ctx).SetAttributes(
@@ -63,11 +64,11 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 
 		reply, reqErr := r.conn.RequestMsgWithContext(ctx, msg)
 		if reqErr != nil {
-			return fmt.Errorf("nats requester: %w", reqErr)
+			return errors.Join(goflux.ErrTransport, fmt.Errorf("nats: %w", reqErr))
 		}
 
 		if decErr := r.respCodec.Decode(reply.Data, &result); decErr != nil {
-			return fmt.Errorf("nats requester decode response: %w", decErr)
+			return errors.Join(goflux.ErrDecode, fmt.Errorf("nats: %w", decErr))
 		}
 
 		return nil
@@ -76,5 +77,6 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 	return result, err
 }
 
-// Close drains the underlying NATS connection.
-func (r *Requester[Req, Resp]) Close() error { return r.conn.Drain() }
+// Close is a no-op. The caller owns the *nats.Conn and is responsible for
+// draining or closing it.
+func (r *Requester[Req, Resp]) Close() error { return nil }
