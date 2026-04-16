@@ -86,10 +86,6 @@ func (s *Subscriber[T]) Mux() *http.ServeMux {
 	return s.mux
 }
 
-func (s *Subscriber[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
-}
-
 // Subscribe registers handler for POST {basePath}/{subject} on the mux.
 // Multiple subjects can be registered before the server starts.
 // ctx is used as the base context for all handler invocations.
