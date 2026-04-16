@@ -43,6 +43,8 @@ func Pipe[T any](pub Publisher[T], opts ...PipeOption[T]) Handler[T] {
 			return nil
 		}
 
+		ctx = WithHeader(ctx, msg.Header)
+
 		if err := pub.Publish(ctx, msg.Subject, msg.Payload); err != nil {
 			if cfg.deadLetter != nil {
 				cfg.deadLetter(ctx, msg, err)
@@ -85,6 +87,8 @@ func PipeMap[T, U any](pub Publisher[U], mapFn MapFunc[T, U], opts ...PipeOption
 
 			return nil // map errors are non-fatal to the subscriber
 		}
+
+		ctx = WithHeader(ctx, msg.Header)
 
 		if err := pub.Publish(ctx, mapped.Subject, mapped.Payload); err != nil {
 			if cfg.deadLetter != nil {
