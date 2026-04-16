@@ -8,7 +8,7 @@ require (
 	github.com/foomo/goencode v0.1.0
 	github.com/foomo/goflux v0.0.0-00010101000000-000000000000
 	github.com/foomo/gofuncy v0.2.0
-	github.com/nats-io/nats-server/v2 v2.12.6
+	github.com/nats-io/nats-server/v2 v2.12.7
 	github.com/nats-io/nats.go v1.50.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
