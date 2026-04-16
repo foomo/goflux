@@ -27,6 +27,7 @@ github.com/foomo/go v0.8.1/go.mod h1:jeSB/atkoqSoJ3+ak0+b/Xtj7IMyDj1odzJroudT7Dw
 github.com/foomo/goencode v0.1.0 h1:vxRBxxkUpfmbTpxGBvx0GWSmkO4hL76zqr89iPYioE0=
 github.com/foomo/goencode v0.1.0/go.mod h1:D8pyLVRLpTQOemuDxn2V95Qb0E2EWjaqvE5xmvlhBDs=
 github.com/foomo/goflow v0.2.0 h1:nYx9GnNI8U5/YCGDIvtBoVbDEqGTuUszpm3mJC0VIAk=
+github.com/foomo/goflow v0.2.0/go.mod h1:8YaUrXmaT/jnYlKTWH7mbi9JwTJegqj5LxVuzJoK6pw=
 github.com/foomo/gofuncy v0.2.0 h1:fanMIpHocWfoP+u8sevF+Qb/gEh38QeiS6FjeXB+Sx0=
 github.com/foomo/gofuncy v0.2.0/go.mod h1:WnqsC/Ku/19tk0LYHVG8z9tsT9duKqpxHMiJioznv1M=
 github.com/foomo/opentelemetry-go v0.2.0 h1:GlqsEhgW67E9r0a6da4zx0tIW/hXS0rGjNSzaVuh16k=
