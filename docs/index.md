@@ -18,7 +18,7 @@ hero:
 
 features:
   - title: Type-Safe Generics
-    details: Publisher[T], Subscriber[T], Consumer[T], Requester[Req, Resp] with compile-time type safety. No interface{} casts.
+    details: Publisher[T], Subscriber[T], Requester[Req, Resp] with compile-time type safety. No interface{} casts.
   - title: Transport-Agnostic
     details: Write handlers once, swap between channels, NATS, JetStream, and HTTP without changing business logic.
   - title: Acknowledgment Control
@@ -26,7 +26,7 @@ features:
   - title: Request-Reply
     details: Type-safe Requester and Responder interfaces for synchronous messaging over NATS and HTTP.
   - title: Pipeline Operators
-    details: Pipe, PipeMap, FanOut, FanIn, RoundRobin for composable message routing, transformation, and distribution.
+    details: Pipe, PipeMap for message routing and transformation. ToStream/FromStream bridge to goflow for fan-out, fan-in, and stream processing.
   - title: OpenTelemetry Built-In
     details: Tracing and metrics baked into every transport. Span links for async, parent-child for sync. No middleware setup required.
 ---

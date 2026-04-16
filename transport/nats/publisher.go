@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/foomo/goencode"
@@ -27,7 +28,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
 		b, err := p.serializer.Encode(v)
 		if err != nil {
-			return fmt.Errorf("nats publisher encode: %w", err)
+			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("nats: %w", err))
 		}
 
 		trace.SpanFromContext(ctx).SetAttributes(
@@ -48,7 +49,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 		if h := goflux.HeaderFromContext(ctx); h != nil {
 			for k, vs := range h {
 				for _, v := range vs {
-					msg.Header.Add(k, v)
+					msg.Header.Add(gofluxHeaderPrefix+k, v)
 				}
 			}
 		}
@@ -57,4 +58,6 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	})
 }
 
-func (p *Publisher[T]) Close() error { return p.conn.Drain() }
+// Close is a no-op. The caller owns the *nats.Conn and is responsible for
+// draining or closing it.
+func (p *Publisher[T]) Close() error { return nil }

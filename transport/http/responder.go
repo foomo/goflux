@@ -37,9 +37,7 @@ func NewResponder[Req, Resp any](
 		o(cfg)
 	}
 
-	if cfg.tel == nil {
-		cfg.tel, _ = goflux.NewTelemetry()
-	}
+	cfg.tel = goflux.DefaultTelemetry(cfg.tel)
 
 	return &Responder[Req, Resp]{
 		reqCodec:    reqCodec,

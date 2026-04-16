@@ -10,7 +10,6 @@ The channel transport is an in-process pub/sub broker built on typed Go channels
 |-----------|-------------|
 | `Publisher[T]` | Yes |
 | `Subscriber[T]` | Yes |
-| `Consumer[T]` | No |
 | `Requester[Req, Resp]` | No |
 | `Responder[Req, Resp]` | No |
 

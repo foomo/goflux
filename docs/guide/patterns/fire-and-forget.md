@@ -82,7 +82,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
@@ -103,7 +103,7 @@ func main() {
 	}
 	defer conn.Drain()
 
-	codec := goencode.NewJSONCodec[Event]()
+	codec := json.NewCodec[Event]()
 
 	pub := gofluxnats.NewPublisher[Event](conn, codec)
 	sub := gofluxnats.NewSubscriber[Event](conn, codec)

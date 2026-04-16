@@ -12,11 +12,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// Compile-time interface compliance checks.
-var (
-	_ goflux.Subscriber[Event] = (*fluxjetstream.Subscriber[Event])(nil)
-	_ goflux.Consumer[Event]   = (*fluxjetstream.Consumer[Event])(nil)
-)
+// Compile-time interface compliance check.
+var _ goflux.Subscriber[Event] = (*fluxjetstream.Subscriber[Event])(nil)
 
 func ExampleNewSubscriber() {
 	srv, conn := newServer()

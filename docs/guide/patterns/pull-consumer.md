@@ -1,30 +1,25 @@
 # Pull Consumer
 
-The pull consumer pattern gives the application explicit control over when and how many messages are fetched. Instead of the broker pushing messages to a callback, the consumer calls `Fetch` to pull a batch on demand. Every fetched message must be explicitly acknowledged.
+JetStream pull consumers work through the same `Subscriber[T]` interface as push consumers. The nats.go library's `jetstream.Consumer.Consume()` method handles both push and pull delivery modes -- goflux's `Subscriber[T]` wraps this uniformly. The difference is in the JetStream consumer configuration, not the goflux API.
 
-## The Consumer Interface
+## How It Works
 
-```go
-type Consumer[T any] interface {
-	Fetch(ctx context.Context, n int) ([]Message[T], error)
-	Close() error
-}
-```
+A JetStream consumer configured with `AckPolicy: jetstream.AckExplicitPolicy` operates in pull mode. The goflux `Subscriber[T]` calls `consumer.Consume()` internally, which works for both push and pull consumers. Combine this with middleware for concurrency control, auto-ack, and retry policies.
 
-`Fetch` retrieves up to `n` messages. It blocks until at least one message is available or `ctx` is cancelled. The returned messages carry an acker -- you must call `Ack()`, `Nak()`, or `Term()` on each one.
-
-## JetStream Implementation
-
-Only the JetStream transport implements `Consumer[T]`. It wraps a `jetstream.Consumer` and decodes each message through a `goencode.Codec`.
+## JetStream Pull Consumer with Middleware
 
 ```go
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"time"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
+	"github.com/foomo/goflux"
+	"github.com/foomo/goflux/middleware"
 	gofluxjs "github.com/foomo/goflux/transport/jetstream"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -47,68 +42,97 @@ func main() {
 		Name:     "TASKS",
 		Subjects: []string{"tasks.>"},
 	})
-	consumer, _ := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable: "batch-worker",
+
+	// Pull consumer with explicit ack policy.
+	cons, _ := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Durable:   "batch-worker",
+		AckPolicy: jetstream.AckExplicitPolicy,
 	})
 
-	codec := goencode.NewJSONCodec[Task]()
-	pull := gofluxjs.NewConsumer[Task](consumer, codec)
+	codec := json.NewCodec[Task]()
 
-	// Fetch up to 10 messages at a time.
-	msgs, err := pull.Fetch(ctx, 10)
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Create a subscriber from the pull consumer -- same interface as push.
+	sub := gofluxjs.NewSubscriber[Task](cons, codec, gofluxjs.WithManualAck())
 
-	for _, msg := range msgs {
-		if err := processTask(msg.Payload); err != nil {
-			_ = msg.Nak() // redeliver
-			continue
+	// Use ToStream to bridge into goflow for stream processing.
+	stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)
+
+	// Process with bounded concurrency via goflow.
+	policy := middleware.NewRetryPolicy(5 * time.Second)
+	if err := stream.Process(5, func(ctx context.Context, msg goflux.Message[Task]) error {
+		fmt.Printf("processing task %s\n", msg.Payload.ID)
+		err := processTask(msg.Payload)
+		if err != nil {
+			d := policy(err)
+			switch d.Action {
+			case middleware.RetryNak:
+				return msg.Nak()
+			case middleware.RetryNakWithDelay:
+				return msg.NakWithDelay(d.Delay)
+			case middleware.RetryTerm:
+				return msg.Term()
+			}
 		}
-		_ = msg.Ack() // done
+		return msg.Ack()
+	}); err != nil {
+		log.Fatal(err)
 	}
 }
 
 func processTask(_ Task) error { return nil }
 ```
 
-## Batch Processing Loop
+## Processing Patterns
 
-A typical worker loops over `Fetch` until the context is cancelled:
+### Stream-based (goflow)
+
+Use `ToStream` + goflow `Process` for bounded concurrency with stream operators:
 
 ```go
-func runWorker(ctx context.Context, pull goflux.Consumer[Task]) error {
-	for {
-		msgs, err := pull.Fetch(ctx, 50)
-		if err != nil {
-			return err // context cancelled or fatal error
-		}
+stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)
 
-		for _, msg := range msgs {
-			if err := processTask(msg.Payload); err != nil {
-				if isTransient(err) {
-					_ = msg.NakWithDelay(5 * time.Second)
-				} else {
-					_ = msg.Term() // poison message, do not redeliver
-				}
-				continue
-			}
-			_ = msg.Ack()
-		}
+stream.Process(10, func(ctx context.Context, msg goflux.Message[Task]) error {
+    err := myHandler(ctx, msg)
+    if err != nil {
+        return msg.Nak()
+    }
+    return msg.Ack()
+})
+```
+
+### Handler-based (middleware)
+
+Use `Chain` + middleware for simple auto-ack or retry-aware ack:
+
+```go
+// Simple auto-ack.
+handler := goflux.Chain[Task](
+	middleware.AutoAck[Task](),
+)(myHandler)
+
+// Retry-aware ack with custom policy.
+policy := middleware.RetryPolicy(func(err error) middleware.RetryDecision {
+	if goflux.IsNonRetryable(err) {
+		return middleware.RetryDecision{Action: middleware.RetryTerm}
 	}
-}
+	return middleware.RetryDecision{Action: middleware.RetryNakWithDelay, Delay: 5 * time.Second}
+})
+
+handler := goflux.Chain[Task](
+	middleware.RetryAck[Task](policy),
+)(myHandler)
 ```
 
 ## Key Rules
 
-- **Always ack.** Every message returned by `Fetch` must be explicitly acknowledged. Unacked messages will eventually be redelivered by JetStream after the ack-wait timeout.
-- **Decode failures are terminated.** The consumer automatically calls `Term()` on messages that fail codec decoding, preventing infinite redelivery of malformed data.
-- **Caller owns the connection.** `Consumer.Close()` is a no-op. The caller is responsible for draining the NATS connection.
+- **Use `WithManualAck()`.** When composing ack behavior via middleware (`AutoAck` or `RetryAck`), create the subscriber with `WithManualAck()` to prevent the transport from double-acking.
+- **Decode failures are terminated.** The subscriber automatically calls `Term()` on messages that fail codec decoding, preventing infinite redelivery of malformed data.
+- **Caller owns the connection.** `Subscriber.Close()` is a no-op. The caller is responsible for draining the NATS connection.
 
 ## When to Use
 
-- **Batch processing** -- aggregate N messages before writing to a database or sending a bulk API call.
-- **Backpressure control** -- the consumer decides its own pace instead of being overwhelmed by push delivery.
-- **Worker-paced consumption** -- useful when processing time varies widely and you want to avoid buffering messages in memory.
+- **Backpressure control** -- the consumer configuration controls delivery rate instead of being overwhelmed by unbounded push delivery.
+- **Worker-paced consumption** -- useful when processing time varies widely and you want bounded concurrency.
+- **Policy-driven retry** -- classify errors into retry/term without embedding ack logic in handlers.
 
 For push-based delivery with automatic acknowledgment, see [at-least-once](./at-least-once).

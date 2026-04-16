@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxjs "github.com/foomo/goflux/transport/jetstream"
 	"github.com/nats-io/nats.go"
@@ -45,7 +45,7 @@ func main() {
 		Durable: "processor",
 	})
 
-	codec := goencode.NewJSONCodec[Event]()
+	codec := json.NewCodec[Event]()
 	sub := gofluxjs.NewSubscriber[Event](consumer, codec)
 
 	// nil return = ack, non-nil return = nak (automatic).
@@ -89,18 +89,21 @@ _ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[
 
 ## AutoAck Middleware
 
-If you switch a subscriber to manual ack but want auto-ack behavior for part of the handler chain, use the `goflux.AutoAck` middleware:
+If you switch a subscriber to manual ack but want auto-ack behavior for part of the handler chain, use the `middleware.AutoAck` middleware:
 
 ```go
-import "github.com/foomo/goflux"
+import (
+	"github.com/foomo/goflux"
+	"github.com/foomo/goflux/middleware"
+)
 
-handler := goflux.AutoAck[Event]()(func(ctx context.Context, msg goflux.Message[Event]) error {
+handler := middleware.AutoAck[Event]()(func(ctx context.Context, msg goflux.Message[Event]) error {
 	// nil = ack, non-nil = nak — same as the default subscriber behavior.
 	return process(msg.Payload)
 })
 ```
 
-`AutoAck` is a standard `Middleware[T]` and composes with `goflux.Chain`.
+`AutoAck` is a standard `Middleware[T]` and composes with `Chain`.
 
 ## When to Use
 

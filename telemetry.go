@@ -9,9 +9,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/propagation"
 	semconvmsg "go.opentelemetry.io/otel/semconv/v1.40.0/messagingconv"
 	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 const instrName = "github.com/foomo/goflux"
@@ -32,6 +34,9 @@ type Telemetry struct {
 	consumedMessages semconvmsg.ClientConsumedMessages  // goflux.client.consumed.messages
 	publishDuration  semconvmsg.ClientOperationDuration // goflux.client.operation.duration
 	processDuration  semconvmsg.ProcessDuration         // goflux.process.duration
+
+	// goflux-specific metrics
+	ackOutcome metric.Int64Counter // goflux.processor.ack.outcome
 }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +65,50 @@ func WithMeterProvider(mp metric.MeterProvider) TelemetryOption {
 // WithPropagator sets the text-map propagator. Defaults to [otel.GetTextMapPropagator].
 func WithPropagator(p propagation.TextMapPropagator) TelemetryOption {
 	return func(c *telemetryConfig) { c.propagator = p }
+}
+
+// DefaultTelemetry returns tel if non-nil, otherwise creates a new Telemetry
+// from OTel globals. If that fails, it falls back to a noop implementation.
+// This is the standard fallback logic used by all transports.
+func DefaultTelemetry(tel *Telemetry) *Telemetry {
+	if tel != nil {
+		return tel
+	}
+
+	t, err := NewTelemetry()
+	if err != nil {
+		otel.Handle(err)
+
+		return NewNoopTelemetry()
+	}
+
+	return t
+}
+
+// NewNoopTelemetry returns a Telemetry backed by OTel's noop implementations.
+// All Record* calls are safe but produce no spans or metrics.
+func NewNoopTelemetry() *Telemetry {
+	mp := metricnoop.NewMeterProvider()
+	m := mp.Meter(instrName)
+
+	// Noop meter never returns errors.
+	sent, _ := semconvmsg.NewClientSentMessages(m)
+	consumed, _ := semconvmsg.NewClientConsumedMessages(m)
+	pubDur, _ := semconvmsg.NewClientOperationDuration(m)
+	procDur, _ := semconvmsg.NewProcessDuration(m)
+
+	ackOutcome, _ := m.Int64Counter("goflux.processor.ack.outcome")
+
+	return &Telemetry{
+		tracer:           tracenoop.NewTracerProvider().Tracer(instrName),
+		propagator:       propagation.NewCompositeTextMapPropagator(),
+		mp:               mp,
+		sentMessages:     sent,
+		consumedMessages: consumed,
+		publishDuration:  pubDur,
+		processDuration:  procDur,
+		ackOutcome:       ackOutcome,
+	}
 }
 
 // NewTelemetry creates a Telemetry instance. Without options it reads from the
@@ -104,6 +153,13 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 		return nil, fmt.Errorf("messaging telemetry: process duration: %w", err)
 	}
 
+	t.ackOutcome, err = m.Int64Counter("goflux.processor.ack.outcome",
+		metric.WithDescription("Number of message acknowledgment outcomes by action"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("messaging telemetry: ack outcome: %w", err)
+	}
+
 	return t, nil
 }
 
@@ -120,7 +176,7 @@ func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system se
 		attrs = append(attrs, attribute.String("goflux.message.id", id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.publish",
+	ctx, span := t.tracer.Start(ctx, subject+" publish",
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(attrs...),
 	)
@@ -128,7 +184,7 @@ func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system se
 
 	start := time.Now()
 	err := fn(ctx)
-	s := msFloat(start)
+	s := secondsSince(start)
 
 	errType := errorType(err)
 	t.sentMessages.Add(ctx, 1,
@@ -187,12 +243,12 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		startOpts = append(startOpts, trace.WithLinks(trace.Link{SpanContext: cfg.linkedSpanCtx}))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.process", startOpts...)
+	ctx, span := t.tracer.Start(ctx, subject+" process", startOpts...)
 	defer span.End()
 
 	start := time.Now()
 	err := fn(ctx)
-	s := msFloat(start)
+	s := secondsSince(start)
 
 	errType := errorType(err)
 	t.consumedMessages.Add(ctx, 1,
@@ -222,7 +278,7 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 		attrs = append(attrs, attribute.String("goflux.message.id", id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.fetch",
+	ctx, span := t.tracer.Start(ctx, subject+" fetch",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(attrs...),
 	)
@@ -230,7 +286,7 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 
 	start := time.Now()
 	err := fn(ctx)
-	s := msFloat(start)
+	s := secondsSince(start)
 
 	errType := errorType(err)
 	t.consumedMessages.Add(ctx, int64(count),
@@ -259,7 +315,7 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 		attrs = append(attrs, attribute.String("goflux.message.id", id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.request",
+	ctx, span := t.tracer.Start(ctx, subject+" request",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attrs...),
 	)
@@ -267,7 +323,7 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 
 	start := time.Now()
 	err := fn(ctx)
-	s := msFloat(start)
+	s := secondsSince(start)
 
 	errType := errorType(err)
 	t.sentMessages.Add(ctx, 1,
@@ -303,6 +359,17 @@ func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int6
 	)
 }
 
+// RecordAckOutcome records an acknowledgment outcome (ack, nak, nak_with_delay,
+// term) with an optional error label when the ack operation itself fails.
+func (t *Telemetry) RecordAckOutcome(ctx context.Context, action, subject string, err error) {
+	attrs := metric.WithAttributes(
+		attribute.String("goflux.ack.action", action),
+		attribute.String("goflux.destination.name", subject),
+		attribute.Bool("goflux.ack.error", err != nil),
+	)
+	t.ackOutcome.Add(ctx, 1, attrs)
+}
+
 // ---------------------------------------------------------------------------
 // Propagation methods
 // ---------------------------------------------------------------------------
@@ -333,8 +400,8 @@ func (t *Telemetry) ExtractSpanContext(ctx context.Context, carrier propagation.
 // Helpers
 // ---------------------------------------------------------------------------
 
-func msFloat(start time.Time) float64 {
-	return float64(time.Since(start).Microseconds()) / 1000.0
+func secondsSince(start time.Time) float64 {
+	return time.Since(start).Seconds()
 }
 
 func errorType(err error) semconvmsg.ErrorTypeAttr {
@@ -342,7 +409,7 @@ func errorType(err error) semconvmsg.ErrorTypeAttr {
 		return semconvmsg.ErrorTypeAttr("")
 	}
 
-	return semconvmsg.ErrorTypeAttr(fmt.Sprintf("%T", err))
+	return semconvmsg.ErrorTypeAttr("error")
 }
 
 func recordSpanResult(span trace.Span, err error) {

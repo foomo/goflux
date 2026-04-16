@@ -1,0 +1,37 @@
+{
+	"$schema": "https://claudl.foomo.org/schemas/lockfile.json",
+	"version": 1,
+	"resolved": {},
+	"resolved_sources": {
+		"juliusbrussee/caveman": {
+			"repository": "https://github.com/juliusbrussee/caveman",
+			"ref": "main",
+			"sha": "c2ed24b3e5d412cd0c25197b2bc9af587621fd99",
+			"integrity": "sha256-f9c83a2b20fc3b3503af9d1ae1cf2098c9f8c3d326c203c236b160ebe81ac8f0",
+			"artifacts": {
+				"skills": [
+					"caveman"
+				],
+				"commands": null,
+				"agents": null,
+				"hooks": null,
+				"prompts": null
+			}
+		},
+		"mattpocock/skills": {
+			"repository": "https://github.com/mattpocock/skills",
+			"ref": "main",
+			"sha": "651eab033bdf8f7fd535c274f8cbe839075aba5e",
+			"integrity": "sha256-74147eb6010a65957efef2b9e0f0b3ff935c1def7fc117697151b1d0f3610556",
+			"artifacts": {
+				"skills": [
+					"grill-me"
+				],
+				"commands": null,
+				"agents": null,
+				"hooks": null,
+				"prompts": null
+			}
+		}
+	}
+}

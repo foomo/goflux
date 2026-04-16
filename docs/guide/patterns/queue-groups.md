@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
@@ -35,7 +35,7 @@ func main() {
 	conn, _ := nats.Connect(nats.DefaultURL)
 	defer conn.Drain()
 
-	codec := goencode.NewJSONCodec[Task]()
+	codec := json.NewCodec[Task]()
 
 	// Both subscribers join the "workers" queue group.
 	// Each task is delivered to exactly one of them.

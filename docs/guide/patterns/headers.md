@@ -26,7 +26,7 @@ package main
 import (
 	"context"
 
-	"github.com/foomo/goencode"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
@@ -41,7 +41,7 @@ func main() {
 	conn, _ := nats.Connect(nats.DefaultURL)
 	defer conn.Drain()
 
-	codec := goencode.NewJSONCodec[OrderEvent]()
+	codec := json.NewCodec[OrderEvent]()
 	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec)
 
 	ctx := goflux.WithHeader(context.Background(), goflux.Header{

@@ -3,9 +3,11 @@ package http
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/foomo/goencode"
@@ -51,7 +53,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 func (p *Publisher[T]) post(ctx context.Context, subject string, v T) error {
 	b, err := p.serializer.Encode(v)
 	if err != nil {
-		return fmt.Errorf("http publisher encode: %w", err)
+		return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("http: %w", err))
 	}
 
 	trace.SpanFromContext(ctx).SetAttributes(
@@ -64,11 +66,11 @@ func (p *Publisher[T]) post(ctx context.Context, subject string, v T) error {
 		ct = "application/json"
 	}
 
-	url := p.baseURL + "/" + subject
+	target := p.baseURL + "/" + url.PathEscape(subject)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(b))
 	if err != nil {
-		return fmt.Errorf("http publisher build request: %w", err)
+		return errors.Join(goflux.ErrPublish, goflux.ErrTransport, fmt.Errorf("http: %w", err))
 	}
 
 	req.Header.Set("Content-Type", ct)
@@ -89,14 +91,14 @@ func (p *Publisher[T]) post(ctx context.Context, subject string, v T) error {
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("http publisher send: %w", err)
+		return errors.Join(goflux.ErrPublish, goflux.ErrTransport, fmt.Errorf("http: %w", err))
 	}
 	defer resp.Body.Close()
 	// drain body so the connection can be reused (limit to 1 MiB)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("http publisher: server returned %d for %s", resp.StatusCode, url)
+		return errors.Join(goflux.ErrPublish, goflux.ErrTransport, fmt.Errorf("http: server returned %d for %s", resp.StatusCode, target))
 	}
 
 	return nil
