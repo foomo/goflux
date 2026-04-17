@@ -101,12 +101,12 @@ func main() {
 
 	// Branch 1: archive stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return goflux.FromStream(ctx, streams[0], archivePub)
+		return goflux.FromStream(streams[0], archivePub, "events.archive")
 	}, gofuncy.WithName("archive-publisher"))
 
 	// Branch 2: notification stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return goflux.FromStream(ctx, streams[1], notifyPub)
+		return goflux.FromStream(streams[1], notifyPub, "events.notify")
 	}, gofuncy.WithName("notify-publisher"))
 
 	// ---------------------------------------------------------------
@@ -200,11 +200,11 @@ Replace `Tee` with `FanOut` to distribute messages across publishers instead of 
 workers := logged.FanOut(2)
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return goflux.FromStream(ctx, workers[0], archivePub)
+    return goflux.FromStream(workers[0], archivePub, "events.archive")
 }, gofuncy.WithName("worker-0"))
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return goflux.FromStream(ctx, workers[1], notifyPub)
+    return goflux.FromStream(workers[1], notifyPub, "events.notify")
 }, gofuncy.WithName("worker-1"))
 ```
 

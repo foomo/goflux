@@ -111,21 +111,21 @@ stream.
 ## FromStream
 
 ```go
-func FromStream[T any](ctx context.Context, stream goflow.Stream[Message[T]], pub Publisher[T]) error
+func FromStream[T any](stream goflow.Stream[Message[T]], pub Publisher[T], subject string) error
 ```
 
-Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. Blocks until the stream is exhausted or the context is cancelled.
+Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. When `subject` is non-empty every message is published to that subject; when empty the original message subject is preserved. Blocks until the stream is exhausted or the context is cancelled.
 
 ```go
 stream := goflux.ToStream[RawEvent](ctx, sub, "events.raw", 16)
 
-// Transform with goflow, then publish to a different transport
+// Transform with goflow, then publish to a different subject
 mapped := goflow.Map(stream, func(ctx context.Context, msg goflux.Message[RawEvent]) (goflux.Message[RawEvent], error) {
     msg.Payload.Processed = true
     return msg, nil
 })
 
-err := goflux.FromStream(ctx, mapped, pub)
+err := goflux.FromStream(mapped, pub, "events.processed")
 ```
 
 ## BoundPublisher
