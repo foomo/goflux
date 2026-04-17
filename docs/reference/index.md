@@ -174,7 +174,7 @@ See [Middleware](/middleware/) for details and examples.
 | `Bind[T](pub, subject)` | Fix subject on a publisher |
 | `ToChan[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `<-chan Message[T]` |
 | `ToStream[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `goflow.Stream[Message[T]]` |
-| `FromStream[T](ctx, stream, pub)` | Consume goflow stream and publish each message |
+| `FromStream[T](stream, pub, subject)` | Consume goflow stream and publish each message |
 | `RetryPublisher[T](pub, maxAttempts, backoff)` | Wrap publisher with retry logic |
 
 ### Pipe Options

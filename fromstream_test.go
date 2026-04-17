@@ -33,7 +33,7 @@ func TestFromStream(t *testing.T) {
 	}
 	stream := goflow.Of(ctx, msgs...)
 
-	err = goflux.FromStream(ctx, stream, dstPub)
+	err = goflux.FromStream(stream, dstPub, "")
 	require.NoError(t, err)
 
 	msg1 := <-dstCh

@@ -77,5 +77,5 @@ filtered := stream.Filter(func(_ context.Context, msg goflux.Message[RawEvent]) 
     return msg.Payload.Priority > 5
 })
 
-err := goflux.FromStream(ctx, filtered, dstPub)
+err := goflux.FromStream(filtered, dstPub, "events.filtered")
 ```
