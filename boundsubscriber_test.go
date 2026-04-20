@@ -31,8 +31,8 @@ func ExampleBindSubscriber() {
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
 		ready()
 
-		// The subject argument is ignored — "orders" is always used.
-		return bound.Subscribe(ctx, "", func(_ context.Context, msg goflux.Message[Event]) error {
+		// No subject argument — bound subscriber always uses "orders".
+		return bound.Subscribe(ctx, func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload.Name)
 			cancel()
 
