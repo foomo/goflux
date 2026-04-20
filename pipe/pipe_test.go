@@ -168,6 +168,7 @@ func ExamplePipe_withFilter() {
 	if err := srcPub.Publish(ctx, "events", Event{ID: "skip", Name: "ignored"}); err != nil {
 		panic(err)
 	}
+
 	if err := srcPub.Publish(ctx, "events", Event{ID: "keep", Name: "accepted"}); err != nil {
 		panic(err)
 	}

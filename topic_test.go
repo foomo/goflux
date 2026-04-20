@@ -65,6 +65,7 @@ func TestBoundTopic(t *testing.T) {
 	bt := goflux.BindTopic[string](pub, sub, "bound-subject")
 
 	var got goflux.Message[string]
+
 	done := make(chan struct{})
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
@@ -72,6 +73,7 @@ func TestBoundTopic(t *testing.T) {
 
 		return bt.Subscribe(ctx, func(_ context.Context, msg goflux.Message[string]) error {
 			got = msg
+
 			close(done)
 
 			return nil
