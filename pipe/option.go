@@ -2,46 +2,60 @@ package pipe
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/foomo/goflux"
 )
 
 // Filter decides whether a message should be forwarded.
-// Returning false or a non-nil error drops the message and logs the reason.
-type Filter[T any] func(ctx context.Context, msg goflux.Message[T]) (bool, error)
+// Returning false skips the message (returns nil to transport = ack).
+type Filter[T any] func(ctx context.Context, msg goflux.Message[T]) bool
 
-// DeadLetterFunc receives messages that could not be mapped or published after
-// all retries are exhausted. Use it to log, alert, or forward to a DLQ.
+// MapFunc transforms a Message[T] payload into a U value.
+// A non-nil error is returned to the transport and routes to the dead-letter observer.
+type MapFunc[T, U any] func(ctx context.Context, msg goflux.Message[T]) (U, error)
+
+// FlatMapFunc expands a Message[T] into zero or more U values.
+// A non-nil error is returned to the transport and routes to the dead-letter observer.
+type FlatMapFunc[T, U any] func(ctx context.Context, msg goflux.Message[T]) ([]U, error)
+
+// DeadLetterFunc is an observer called when a map/flatmap/publish operation fails.
+// It receives the original message and the error for logging/alerting.
+// It does NOT swallow the error — the error is still returned to the transport.
 type DeadLetterFunc[T any] func(ctx context.Context, msg goflux.Message[T], err error)
 
-// MapFunc transforms a Message[T] into a Message[U].
-// A non-nil error drops the message and routes it to the DeadLetterFunc if set.
-type MapFunc[T, U any] func(ctx context.Context, msg goflux.Message[T]) (goflux.Message[U], error)
+// ---------------------------------------------------------------------------
+// Option[T] — for New[T]
+// ---------------------------------------------------------------------------
 
-type config[T any] struct {
-	filters    []Filter[T]
-	deadLetter DeadLetterFunc[T]
-}
-
-// Option configures a Pipe or PipeMap call.
+// Option configures a [New] pipe.
 type Option[T any] func(*config[T])
 
-// WithFilter registers a filter that runs before publish (or before map in
-// PipeMap). Messages for which the filter returns false are silently dropped
-// and logged. Filter errors are treated as false.
-func WithFilter[T any](f Filter[T]) Option[T] {
-	return func(c *config[T]) { c.filters = append(c.filters, f) }
+type config[T any] struct {
+	filter     Filter[T]
+	deadLetter DeadLetterFunc[T]
+	middleware []goflux.Middleware[T]
 }
 
-// WithDeadLetter registers a dead-letter handler called when MapFunc returns
-// an error or when the publisher fails after all retries are exhausted.
-// The original Message[T] and the terminal error are passed to the handler.
+// WithFilter sets a filter that runs before publish.
+// Messages for which the filter returns false are skipped (handler returns nil).
+func WithFilter[T any](f Filter[T]) Option[T] {
+	return func(c *config[T]) { c.filter = f }
+}
+
+// WithDeadLetter sets an observer called when publish fails.
+// The observer receives the original message and the error.
 func WithDeadLetter[T any](fn DeadLetterFunc[T]) Option[T] {
 	return func(c *config[T]) { c.deadLetter = fn }
 }
 
-func buildConfig[T any](opts []Option[T]) *config[T] {
+// WithMiddleware registers middleware that wraps the pipe's internal handler.
+// Middleware runs before filter/map/publish — it sees the original message and
+// can enrich the context that flows into subsequent stages.
+func WithMiddleware[T any](mw ...goflux.Middleware[T]) Option[T] {
+	return func(c *config[T]) { c.middleware = append(c.middleware, mw...) }
+}
+
+func newConfig[T any](opts []Option[T]) *config[T] {
 	cfg := &config[T]{}
 	for _, o := range opts {
 		o(cfg)
@@ -50,28 +64,39 @@ func buildConfig[T any](opts []Option[T]) *config[T] {
 	return cfg
 }
 
-// applyFilters returns true if the message should be dropped. Filters are
-// evaluated in order; the first false or error short-circuits.
-func applyFilters[T any](ctx context.Context, filters []Filter[T], msg goflux.Message[T]) bool {
-	for _, f := range filters {
-		ok, err := f(ctx, msg)
-		if err != nil {
-			slog.WarnContext(ctx, "pipe: filter error, dropping message",
-				slog.String("subject", msg.Subject),
-				slog.Any("error", err),
-			)
+// ---------------------------------------------------------------------------
+// MapOption[T, U] — for NewMap[T, U] and NewFlatMap[T, U]
+// ---------------------------------------------------------------------------
 
-			return true
-		}
+// MapOption configures a [NewMap] or [NewFlatMap] pipe.
+type MapOption[T, U any] func(*mapConfig[T, U])
 
-		if !ok {
-			slog.DebugContext(ctx, "pipe: message filtered",
-				slog.String("subject", msg.Subject),
-			)
+type mapConfig[T, U any] struct {
+	filter     Filter[T]
+	deadLetter DeadLetterFunc[T]
+	middleware []goflux.Middleware[T]
+}
 
-			return true
-		}
+// WithMapFilter sets a filter that runs before map/flatmap.
+func WithMapFilter[T, U any](f Filter[T]) MapOption[T, U] {
+	return func(c *mapConfig[T, U]) { c.filter = f }
+}
+
+// WithMapDeadLetter sets an observer called when map/flatmap or publish fails.
+func WithMapDeadLetter[T, U any](fn DeadLetterFunc[T]) MapOption[T, U] {
+	return func(c *mapConfig[T, U]) { c.deadLetter = fn }
+}
+
+// WithMapMiddleware registers middleware for a map/flatmap pipe.
+func WithMapMiddleware[T, U any](mw ...goflux.Middleware[T]) MapOption[T, U] {
+	return func(c *mapConfig[T, U]) { c.middleware = append(c.middleware, mw...) }
+}
+
+func newMapConfig[T, U any](opts []MapOption[T, U]) *mapConfig[T, U] {
+	cfg := &mapConfig[T, U]{}
+	for _, o := range opts {
+		o(cfg)
 	}
 
-	return false
+	return cfg
 }
