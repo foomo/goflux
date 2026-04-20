@@ -2,133 +2,164 @@ package pipe
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/foomo/goflux"
 )
 
-// Pipe returns a Handler[T] that forwards every accepted message to pub.
-// Filters run first; a dropped message never reaches pub.
-// A publish error is returned to the caller as-is.
-func Pipe[T any](pub goflux.Publisher[T], opts ...Option[T]) goflux.Handler[T] {
-	cfg := buildConfig(opts)
+// New returns a [goflux.Handler] that forwards every accepted message to pub.
+// The handler:
+//  1. Runs the middleware chain (if any)
+//  2. Applies the filter (if set) — false means skip (return nil)
+//  3. Forwards msg.Header into the publish context via [goflux.WithHeader]
+//  4. Publishes msg.Payload to msg.Subject
+//
+// Publish errors are returned to the caller (transport decides retry/nak).
+// The dead-letter observer is called on publish error for logging/alerting.
+func New[T any](pub goflux.Publisher[T], opts ...Option[T]) goflux.Handler[T] {
+	cfg := newConfig(opts)
 
-	return func(ctx context.Context, msg goflux.Message[T]) error {
-		if dropped := applyFilters(ctx, cfg.filters, msg); dropped {
+	handler := func(ctx context.Context, msg goflux.Message[T]) error {
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(attribute.String("pipe.type", "forward"))
+
+		if cfg.filter != nil && !cfg.filter(ctx, msg) {
+			span.SetAttributes(attribute.Bool("pipe.filtered", true))
+
 			return nil
 		}
 
 		ctx = goflux.WithHeader(ctx, msg.Header)
 
 		if err := pub.Publish(ctx, msg.Subject, msg.Payload); err != nil {
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
+			observeDeadLetter(span, cfg.deadLetter, ctx, msg, err)
+			span.AddEvent("pipe.publish_error", trace.WithAttributes(
+				attribute.String("pipe.error", err.Error()),
+			))
 
 			return err
 		}
 
 		return nil
 	}
+
+	return applyMiddleware(handler, cfg.middleware)
 }
 
-// PipeMap returns a Handler[T] that maps each message from T to U before
-// publishing. Filters run on T before the map. A map error routes the original
-// Message[T] to the dead-letter handler (if set) and drops the message.
-func PipeMap[T, U any](pub goflux.Publisher[U], mapFn MapFunc[T, U], opts ...Option[T]) goflux.Handler[T] {
-	cfg := buildConfig(opts)
+// NewMap returns a [goflux.Handler] that transforms each message from T to U
+// before publishing. The filter runs on the original Message[T] before the map.
+//
+// Map errors and publish errors are returned to the caller.
+// The dead-letter observer is called on either failure.
+func NewMap[T, U any](pub goflux.Publisher[U], mapFn MapFunc[T, U], opts ...MapOption[T, U]) goflux.Handler[T] {
+	cfg := newMapConfig(opts)
 
-	return func(ctx context.Context, msg goflux.Message[T]) error {
-		if dropped := applyFilters(ctx, cfg.filters, msg); dropped {
+	handler := func(ctx context.Context, msg goflux.Message[T]) error {
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(attribute.String("pipe.type", "map"))
+
+		if cfg.filter != nil && !cfg.filter(ctx, msg) {
+			span.SetAttributes(attribute.Bool("pipe.filtered", true))
+
 			return nil
 		}
 
 		mapped, err := mapFn(ctx, msg)
 		if err != nil {
-			slog.ErrorContext(ctx, "pipemap: map failed, dropping message",
-				slog.String("subject", msg.Subject),
-				slog.Any("error", err),
-			)
+			observeDeadLetter(span, cfg.deadLetter, ctx, msg, err)
+			span.AddEvent("pipe.map_error", trace.WithAttributes(
+				attribute.String("pipe.error", err.Error()),
+			))
 
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
-
-			return nil // map errors are non-fatal to the subscriber
+			return fmt.Errorf("pipe map: %w", err)
 		}
 
 		ctx = goflux.WithHeader(ctx, msg.Header)
 
-		if err := pub.Publish(ctx, mapped.Subject, mapped.Payload); err != nil {
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
+		if err := pub.Publish(ctx, msg.Subject, mapped); err != nil {
+			observeDeadLetter(span, cfg.deadLetter, ctx, msg, err)
+			span.AddEvent("pipe.publish_error", trace.WithAttributes(
+				attribute.String("pipe.error", err.Error()),
+			))
 
 			return err
 		}
 
 		return nil
 	}
+
+	return applyMiddleware(handler, cfg.middleware)
 }
 
-// BoundPipe returns a Handler[T] that forwards every accepted message to a
-// BoundPublisher. The bound publisher's fixed subject is used for publishing.
-func BoundPipe[T any](pub goflux.BoundPublisher[T], opts ...Option[T]) goflux.Handler[T] {
-	cfg := buildConfig(opts)
+// NewFlatMap returns a [goflux.Handler] that expands each message from T into
+// zero or more U values, publishing each one individually.
+//
+// If the FlatMapFunc fails, the error is returned immediately.
+// If a publish fails mid-batch, items already published are NOT rolled back —
+// downstream consumers must be idempotent or deduplicate.
+func NewFlatMap[T, U any](pub goflux.Publisher[U], fn FlatMapFunc[T, U], opts ...MapOption[T, U]) goflux.Handler[T] {
+	cfg := newMapConfig(opts)
 
-	return func(ctx context.Context, msg goflux.Message[T]) error {
-		if dropped := applyFilters(ctx, cfg.filters, msg); dropped {
+	handler := func(ctx context.Context, msg goflux.Message[T]) error {
+		span := trace.SpanFromContext(ctx)
+		span.SetAttributes(attribute.String("pipe.type", "flatmap"))
+
+		if cfg.filter != nil && !cfg.filter(ctx, msg) {
+			span.SetAttributes(attribute.Bool("pipe.filtered", true))
+
 			return nil
 		}
 
-		ctx = goflux.WithHeader(ctx, msg.Header)
-
-		if err := pub.Publish(ctx, msg.Payload); err != nil {
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
-
-			return err
-		}
-
-		return nil
-	}
-}
-
-// BoundPipeMap returns a Handler[T] that maps each message from T to U before
-// publishing to a BoundPublisher[U].
-func BoundPipeMap[T, U any](pub goflux.BoundPublisher[U], mapFn MapFunc[T, U], opts ...Option[T]) goflux.Handler[T] {
-	cfg := buildConfig(opts)
-
-	return func(ctx context.Context, msg goflux.Message[T]) error {
-		if dropped := applyFilters(ctx, cfg.filters, msg); dropped {
-			return nil
-		}
-
-		mapped, err := mapFn(ctx, msg)
+		items, err := fn(ctx, msg)
 		if err != nil {
-			slog.ErrorContext(ctx, "pipemap: map failed, dropping message",
-				slog.String("subject", msg.Subject),
-				slog.Any("error", err),
-			)
+			observeDeadLetter(span, cfg.deadLetter, ctx, msg, err)
+			span.AddEvent("pipe.map_error", trace.WithAttributes(
+				attribute.String("pipe.error", err.Error()),
+			))
 
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
-
-			return nil
+			return fmt.Errorf("pipe flatmap: %w", err)
 		}
 
 		ctx = goflux.WithHeader(ctx, msg.Header)
 
-		if err := pub.Publish(ctx, mapped.Payload); err != nil {
-			if cfg.deadLetter != nil {
-				cfg.deadLetter(ctx, msg, err)
-			}
+		for _, item := range items {
+			if err := pub.Publish(ctx, msg.Subject, item); err != nil {
+				observeDeadLetter(span, cfg.deadLetter, ctx, msg, err)
+				span.AddEvent("pipe.publish_error", trace.WithAttributes(
+					attribute.String("pipe.error", err.Error()),
+				))
 
-			return err
+				return err
+			}
 		}
+
+		span.SetAttributes(attribute.Int("pipe.items_published", len(items)))
 
 		return nil
 	}
+
+	return applyMiddleware(handler, cfg.middleware)
+}
+
+// applyMiddleware wraps handler with the middleware chain (if any).
+func applyMiddleware[T any](handler goflux.Handler[T], mws []goflux.Middleware[T]) goflux.Handler[T] {
+	if len(mws) == 0 {
+		return handler
+	}
+
+	return goflux.Chain(mws...)(handler)
+}
+
+// observeDeadLetter calls the dead-letter observer (if set) and adds a span event.
+func observeDeadLetter[T any](span trace.Span, dl DeadLetterFunc[T], ctx context.Context, msg goflux.Message[T], err error) {
+	if dl != nil {
+		dl(ctx, msg, err)
+	}
+
+	span.AddEvent("pipe.dead_letter", trace.WithAttributes(
+		attribute.String("pipe.error", err.Error()),
+	))
 }
