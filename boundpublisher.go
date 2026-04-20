@@ -2,24 +2,28 @@ package goflux
 
 import "context"
 
-// BoundPublisher wraps a Publisher with a fixed subject.
-type BoundPublisher[T any] struct {
+// BoundPublisher publishes to a fixed subject. No subject param needed.
+type BoundPublisher[T any] interface {
+	// Publish serializes v and delivers it to the bound subject.
+	Publish(ctx context.Context, v T) error
+	// Close releases any underlying connections.
+	Close() error
+}
+
+// BindPublisher wraps a Publisher with a fixed subject.
+func BindPublisher[T any](pub Publisher[T], subject string) BoundPublisher[T] {
+	return &boundPublisher[T]{pub: pub, subject: subject}
+}
+
+type boundPublisher[T any] struct {
 	pub     Publisher[T]
 	subject string
 }
 
-// Bind returns a BoundPublisher that always publishes to the given subject.
-func Bind[T any](pub Publisher[T], subject string) *BoundPublisher[T] {
-	return &BoundPublisher[T]{pub: pub, subject: subject}
-}
-
-// Publish sends v to the bound subject. The subject parameter is ignored —
-// the subject provided to [Bind] is always used.
-func (b *BoundPublisher[T]) Publish(ctx context.Context, _ string, v T) error {
+func (b *boundPublisher[T]) Publish(ctx context.Context, v T) error {
 	return b.pub.Publish(ctx, b.subject, v)
 }
 
-// Close delegates to the underlying Publisher.
-func (b *BoundPublisher[T]) Close() error {
+func (b *boundPublisher[T]) Close() error {
 	return b.pub.Close()
 }
