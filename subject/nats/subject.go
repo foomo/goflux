@@ -1,4 +1,4 @@
-package subject
+package nats
 
 import "strings"
 
@@ -8,7 +8,7 @@ type Prefix struct {
 }
 
 // NewPrefix creates a reusable prefix from zero or more segments.
-// Zero segments is valid — Domain becomes the first token in the subject.
+// Zero segments is valid — Domain becomes the first token in the nats.
 func NewPrefix(segments ...string) Prefix {
 	for _, s := range segments {
 		validateSegment(s)
@@ -28,7 +28,7 @@ func (p Prefix) Domain(name string) Domain {
 	return Domain{prefix: p.joined, name: name}
 }
 
-// Domain represents the domain segment of a subject.
+// Domain represents the domain segment of a nats.
 type Domain struct {
 	prefix string
 	name   string
@@ -40,7 +40,7 @@ func NewDomain(name string) Domain {
 	return Domain{name: name}
 }
 
-// String returns the full subject up to and including the domain.
+// String returns the full nats up to and including the domain.
 func (d Domain) String() string {
 	if d.prefix == "" {
 		return d.name
@@ -49,7 +49,7 @@ func (d Domain) String() string {
 	return d.prefix + "." + d.name
 }
 
-// All returns a NATS ">" wildcard subject matching everything under this domain.
+// All returns a NATS ">" wildcard nats matching everything under this domain.
 func (d Domain) All() string {
 	return d.String() + ".>"
 }
@@ -60,18 +60,18 @@ func (d Domain) Entity(name string) Entity {
 	return Entity{domain: d.String(), name: name}
 }
 
-// Entity represents the entity segment of a subject.
+// Entity represents the entity segment of a nats.
 type Entity struct {
 	domain string
 	name   string
 }
 
-// String returns the full subject up to and including the entity.
+// String returns the full nats up to and including the entity.
 func (e Entity) String() string {
 	return e.domain + "." + e.name
 }
 
-// All returns a NATS ">" wildcard subject matching everything under this entity.
+// All returns a NATS ">" wildcard nats matching everything under this entity.
 func (e Entity) All() string {
 	return e.String() + ".>"
 }
@@ -82,13 +82,13 @@ func (e Entity) Event(name string) Event {
 	return Event{entity: e.String(), name: name}
 }
 
-// Event represents the terminal event segment of a subject.
+// Event represents the terminal event segment of a nats.
 type Event struct {
 	entity string
 	name   string
 }
 
-// String returns the complete subject string.
+// String returns the complete nats string.
 func (ev Event) String() string {
 	return ev.entity + "." + ev.name
 }

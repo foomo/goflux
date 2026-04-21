@@ -31,13 +31,13 @@ Quick reference for all goflux types, interfaces, and operators.
 ### Interfaces
 
 ```go
-// Publisher sends encoded messages to a subject/topic.
+// Publisher sends encoded messages to a nats/topic.
 type Publisher[T any] interface {
     Publish(ctx context.Context, subject string, v T) error
     Close() error
 }
 
-// Subscriber listens on a subject and dispatches decoded messages to a Handler.
+// Subscriber listens on a nats and dispatches decoded messages to a Handler.
 // Subscribe blocks until ctx is cancelled or a fatal error occurs.
 type Subscriber[T any] interface {
     Subscribe(ctx context.Context, subject string, handler Handler[T]) error

@@ -8,7 +8,7 @@ This page covers every core type in goflux and the rules that govern how they in
 
 ```go
 type Message[T any] struct {
-    Subject string `json:"subject"`
+    Subject string `json:"nats"`
     Payload T      `json:"payload"`
     Header  Header `json:"header,omitempty"`
     // unexported: acker Acker
@@ -235,7 +235,7 @@ go func() {
 pub := gofluxnats.NewPublisher(conn, codec)
 bound := goflux.BindPublisher(pub, "orders.created")
 
-// No subject argument needed.
+// No nats argument needed.
 err := bound.Publish(ctx, OrderEvent{ID: "42"})
 ```
 

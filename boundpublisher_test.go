@@ -10,8 +10,8 @@ import (
 	"github.com/foomo/gofuncy"
 )
 
-// ExampleBindPublisher demonstrates creating a BoundPublisher that fixes the subject.
-// Callers only need to provide the payload — the subject is always "orders".
+// ExampleBindPublisher demonstrates creating a BoundPublisher that fixes the nats.
+// Callers only need to provide the payload — the nats is always "orders".
 func ExampleBindPublisher() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -24,7 +24,7 @@ func ExampleBindPublisher() {
 		panic(err)
 	}
 
-	// BindPublisher fixes the subject to "orders".
+	// BindPublisher fixes the nats to "orders".
 	bound := goflux.BindPublisher[Event](pub, "orders")
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
@@ -41,7 +41,7 @@ func ExampleBindPublisher() {
 	// Allow subscriber to register.
 	time.Sleep(10 * time.Millisecond)
 
-	// No subject argument — bound publisher always uses "orders".
+	// No nats argument — bound publisher always uses "orders".
 	if err := bound.Publish(ctx, Event{ID: "1", Name: "widget"}); err != nil {
 		panic(err)
 	}

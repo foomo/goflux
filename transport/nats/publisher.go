@@ -14,11 +14,11 @@ import (
 
 type Publisher[T any] struct {
 	conn       *nats.Conn
-	serializer goencode.Codec[T]
+	serializer goencode.Codec[T, []byte]
 	tel        *goflux.Telemetry
 }
 
-func NewPublisher[T any](conn *nats.Conn, serializer goencode.Codec[T], opts ...Option) *Publisher[T] {
+func NewPublisher[T any](conn *nats.Conn, serializer goencode.Codec[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
 	return &Publisher[T]{conn: conn, serializer: serializer, tel: cfg.tel}

@@ -15,16 +15,16 @@ import (
 // Requester sends typed requests over NATS and waits for typed responses.
 type Requester[Req, Resp any] struct {
 	conn      *nats.Conn
-	reqCodec  goencode.Codec[Req]
-	respCodec goencode.Codec[Resp]
+	reqCodec  goencode.Codec[Req, []byte]
+	respCodec goencode.Codec[Resp, []byte]
 	tel       *goflux.Telemetry
 }
 
 // NewRequester creates a NATS request-reply client.
 func NewRequester[Req, Resp any](
 	conn *nats.Conn,
-	reqCodec goencode.Codec[Req],
-	respCodec goencode.Codec[Resp],
+	reqCodec goencode.Codec[Req, []byte],
+	respCodec goencode.Codec[Resp, []byte],
 	opts ...Option,
 ) *Requester[Req, Resp] {
 	cfg := applyOpts(opts)
@@ -37,7 +37,7 @@ func NewRequester[Req, Resp any](
 	}
 }
 
-// Request sends req to the given subject and waits for a response.
+// Request sends req to the given nats and waits for a response.
 func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req Req) (Resp, error) {
 	var result Resp
 

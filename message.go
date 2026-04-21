@@ -3,10 +3,10 @@ package goflux
 import "time"
 
 // Message is the unit passed to every Handler. Subject carries the routing
-// key (e.g. a NATS subject or HTTP path); Payload holds the decoded value;
+// key (e.g. a NATS nats or HTTP path); Payload holds the decoded value;
 // Header carries optional metadata; acker provides acknowledgment controls.
 type Message[T any] struct {
-	Subject string `json:"subject"`
+	Subject string `json:"nats"`
 	Payload T      `json:"payload"`
 	Header  Header `json:"header,omitempty"`
 	acker   Acker

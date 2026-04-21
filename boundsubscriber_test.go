@@ -11,7 +11,7 @@ import (
 )
 
 // ExampleBindSubscriber demonstrates creating a BoundSubscriber that fixes
-// the subject. Callers only need to provide the handler — the subject is
+// the nats. Callers only need to provide the handler — the nats is
 // always "orders".
 func ExampleBindSubscriber() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -25,13 +25,13 @@ func ExampleBindSubscriber() {
 		panic(err)
 	}
 
-	// BindSubscriber fixes the subject to "orders".
+	// BindSubscriber fixes the nats to "orders".
 	bound := goflux.BindSubscriber[Event](sub, "orders")
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
 		ready()
 
-		// No subject argument — bound subscriber always uses "orders".
+		// No nats argument — bound subscriber always uses "orders".
 		return bound.Subscribe(ctx, func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload.Name)
 			cancel()

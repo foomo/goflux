@@ -113,7 +113,7 @@ handler := pipe.NewMap[RawEvent, CleanEvent](
     }),
     pipe.WithMapDeadLetter[RawEvent, CleanEvent](func(ctx context.Context, msg goflux.Message[RawEvent], err error) {
         slog.ErrorContext(ctx, "dead letter",
-            slog.String("subject", msg.Subject),
+            slog.String("nats", msg.Subject),
             slog.Any("error", err),
         )
     }),

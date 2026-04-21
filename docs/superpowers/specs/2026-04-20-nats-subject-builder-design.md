@@ -9,11 +9,7 @@ goflux uses raw strings for NATS subjects everywhere. No structure, no validatio
 
 ## Solution
 
-A fluent builder in `transport/nats/subject/` that produces structured NATS subjects with typed intermediates. Each level in the chain returns a distinct type, enabling compile-time enforcement of subject structure and use as typed function arguments.
-
-## Package
-
-`transport/nats/subject/` — lives inside the existing `transport/nats/` submodule and its `go.mod`. Pure string manipulation, zero external dependencies.
+A fluent builder in `subject/nats/` that produces structured NATS subjects with typed intermediates. Each level in the chain returns a distinct type, enabling compile-time enforcement of subject structure and use as typed function arguments.
 
 ## Types
 
@@ -40,7 +36,7 @@ Internal string fields store the already-joined prefix portion for efficient `St
 
 ```go
 // NewPrefix creates a reusable prefix from one or more segments (e.g., env, tenant).
-// Zero segments is valid — Domain becomes the first token in the subject.
+// Zero segments is valid — Domain becomes the first token in the nats.
 func NewPrefix(segments ...string) Prefix
 
 // NewDomain creates a Domain directly when no prefix is needed.
@@ -58,7 +54,7 @@ func (e Entity) Event(name string) Event
 ### Wildcard Methods
 
 ```go
-// All returns a NATS ">" wildcard subject at the given level.
+// All returns a NATS ">" wildcard nats at the given level.
 func (d Domain) All() string   // "prefix.domain.>"
 func (e Entity) All() string   // "prefix.domain.entity.>"
 ```
@@ -111,7 +107,7 @@ prefix.Domain("user").Entity("profile").All() // "prod.acme.user.profile.>"
 ### Typed arguments for compile-time safety
 
 ```go
-// Function requires at least a Domain-level subject
+// Function requires at least a Domain-level nats
 func SubscribeUserEvents(ctx context.Context, domain subject.Domain) error {
     return subscriber.Subscribe(ctx, domain.All(), handler)
 }
@@ -138,7 +134,7 @@ prefix.Domain("order").Entity("item").String() // "staging.tenant-42.order.item"
 | Panic on invalid segments | Yes | Programming error, not user input |
 | Wildcards on Domain/Entity only | Yes | `Prefix.All()` rarely useful; `Event` is terminal |
 | No `goflux` core dependency | Yes | Pure utility, no coupling |
-| Package in `transport/nats/subject/` | Yes | Transport-specific, not cross-cutting |
+| Package in `subject/nats/` | Yes | Transport-specific, not cross-cutting |
 | `String()` on all types | Yes | Partial subjects valid for NATS wildcards and subscriptions |
 
 ## Testing Strategy

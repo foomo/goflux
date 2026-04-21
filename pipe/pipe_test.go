@@ -159,13 +159,16 @@ func TestNew_publishErrorReturnsAndCallsDeadLetter(t *testing.T) {
 	pubErr := errors.New("publish failed")
 	badPub := &failPublisher[Event]{err: pubErr}
 
-	var dlCalled atomic.Bool
-	var dlMsg goflux.Message[Event]
-	var dlErr error
+	var (
+		dlCalled atomic.Bool
+		dlMsg    goflux.Message[Event]
+		dlErr    error
+	)
 
 	deadLetter := func(_ context.Context, msg goflux.Message[Event], err error) {
 		dlMsg = msg
 		dlErr = err
+
 		dlCalled.Store(true)
 	}
 
@@ -207,9 +210,11 @@ func TestNew_withMiddleware(t *testing.T) {
 
 	// Middleware that injects a message ID into context.
 	var middlewareCalled atomic.Bool
+
 	mw := func(next goflux.Handler[Event]) goflux.Handler[Event] {
 		return func(ctx context.Context, msg goflux.Message[Event]) error {
 			middlewareCalled.Store(true)
+
 			ctx = goflux.WithMessageID(ctx, "mw-injected-id")
 
 			return next(ctx, msg)
@@ -304,7 +309,7 @@ func TestNewMap_mapErrorReturnsToTransport(t *testing.T) {
 	err := handler(context.Background(), goflux.NewMessage("events", Event{ID: "1", Name: "hello"}))
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, mapErr)
+	require.ErrorIs(t, err, mapErr)
 	assert.True(t, dlCalled.Load())
 }
 
@@ -358,6 +363,7 @@ func TestNewFlatMap(t *testing.T) {
 	}))
 
 	var received []LineItem
+
 	for range 2 {
 		select {
 		case msg := <-dstCh:
@@ -395,7 +401,7 @@ func TestNewFlatMap_flatMapErrorReturnsToTransport(t *testing.T) {
 	err := handler(context.Background(), goflux.NewMessage("orders", Order{ID: "1"}))
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, flatMapErr)
+	require.ErrorIs(t, err, flatMapErr)
 	assert.True(t, dlCalled.Load())
 }
 
@@ -557,6 +563,7 @@ func ExampleNewFlatMap() {
 
 		return dstSub.Subscribe(ctx, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
 			fmt.Println(msg.Payload.OrderID, msg.Payload.Item)
+
 			count++
 			if count == 2 {
 				cancel()

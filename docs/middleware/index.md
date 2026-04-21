@@ -108,7 +108,7 @@ func LogDuration[T any]() goflux.Middleware[T] {
             start := time.Now()
             err := next(ctx, msg)
             slog.InfoContext(ctx, "handler completed",
-                slog.String("subject", msg.Subject),
+                slog.String("nats", msg.Subject),
                 slog.Duration("duration", time.Since(start)),
                 slog.Any("error", err),
             )

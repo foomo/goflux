@@ -62,7 +62,7 @@ func TestBoundTopic(t *testing.T) {
 	sub, err := channel.NewSubscriber(bus, 1)
 	require.NoError(t, err)
 
-	bt := goflux.BindTopic[string](pub, sub, "bound-subject")
+	bt := goflux.BindTopic[string](pub, sub, "bound-nats")
 
 	var got goflux.Message[string]
 
@@ -85,6 +85,6 @@ func TestBoundTopic(t *testing.T) {
 	require.NoError(t, bt.Publish(ctx, "hello"))
 	<-done
 
-	assert.Equal(t, "bound-subject", got.Subject)
+	assert.Equal(t, "bound-nats", got.Subject)
 	assert.Equal(t, "hello", got.Payload)
 }

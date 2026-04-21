@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a fluent, type-safe NATS subject builder to `transport/nats/subject/` with typed intermediates, validation, and wildcard support.
+**Goal:** Add a fluent, type-safe NATS subject builder to `subject/nats/` with typed intermediates, validation, and wildcard support.
 
 **Architecture:** Four immutable struct types (`Prefix`, `Domain`, `Entity`, `Event`) chained via methods. Each accumulates joined string segments internally for efficient `String()`. Validation panics on invalid NATS tokens at construction time.
 
@@ -14,21 +14,21 @@
 
 | File | Responsibility |
 |------|---------------|
-| `transport/nats/subject/subject.go` | Type definitions, constructors, chain methods, String(), wildcards |
-| `transport/nats/subject/validate.go` | `validateSegment()` helper — panics on invalid NATS tokens |
-| `transport/nats/subject/subject_test.go` | All tests: chain, String(), wildcards, validation panics |
+| `subject/nats/subject.go` | Type definitions, constructors, chain methods, String(), wildcards |
+| `subject/nats/validate.go` | `validateSegment()` helper — panics on invalid NATS tokens |
+| `subject/nats/subject_test.go` | All tests: chain, String(), wildcards, validation panics |
 
 ---
 
 ### Task 1: Validation Helper
 
 **Files:**
-- Create: `transport/nats/subject/validate.go`
-- Create: `transport/nats/subject/subject_test.go`
+- Create: `subject/nats/validate.go`
+- Create: `subject/nats/subject_test.go`
 
 - [ ] **Step 1: Write failing tests for validation**
 
-In `transport/nats/subject/subject_test.go`:
+In `subject/nats/subject_test.go`:
 
 ```go
 package subject
@@ -101,7 +101,7 @@ Expected: FAIL — `validateSegment` not defined.
 
 - [ ] **Step 3: Implement validateSegment**
 
-In `transport/nats/subject/validate.go`:
+In `subject/nats/validate.go`:
 
 ```go
 package subject
@@ -111,13 +111,13 @@ import (
 	"strings"
 )
 
-// validateSegment panics if the segment is not a valid NATS subject token.
+// validateSegment panics if the segment is not a valid NATS nats token.
 func validateSegment(s string) {
 	if s == "" {
-		panic("subject: segment must not be empty")
+		panic("nats: segment must not be empty")
 	}
 	if strings.ContainsAny(s, ".*> \t\n\r") {
-		panic(fmt.Sprintf("subject: segment %q contains invalid character (one of: . * > or whitespace)", s))
+		panic(fmt.Sprintf("nats: segment %q contains invalid character (one of: . * > or whitespace)", s))
 	}
 }
 ```
@@ -130,7 +130,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add transport/nats/subject/validate.go transport/nats/subject/subject_test.go
+git add transport/nats/nats/validate.go transport/nats/nats/subject_test.go
 git commit -m "feat(nats/subject): add segment validation helper"
 ```
 
@@ -139,12 +139,12 @@ git commit -m "feat(nats/subject): add segment validation helper"
 ### Task 2: Prefix Type
 
 **Files:**
-- Create: `transport/nats/subject/subject.go`
-- Modify: `transport/nats/subject/subject_test.go`
+- Create: `subject/nats/subject.go`
+- Modify: `subject/nats/subject_test.go`
 
 - [ ] **Step 1: Write failing tests for Prefix**
 
-Append to `transport/nats/subject/subject_test.go`:
+Append to `subject/nats/subject_test.go`:
 
 ```go
 func TestNewPrefix(t *testing.T) {
@@ -187,7 +187,7 @@ Expected: FAIL — `NewPrefix` not defined.
 
 - [ ] **Step 3: Implement Prefix**
 
-In `transport/nats/subject/subject.go`:
+In `subject/nats/subject.go`:
 
 ```go
 package subject
@@ -200,7 +200,7 @@ type Prefix struct {
 }
 
 // NewPrefix creates a reusable prefix from zero or more segments.
-// Zero segments is valid — Domain becomes the first token in the subject.
+// Zero segments is valid — Domain becomes the first token in the nats.
 func NewPrefix(segments ...string) Prefix {
 	for _, s := range segments {
 		validateSegment(s)
@@ -222,7 +222,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add transport/nats/subject/subject.go transport/nats/subject/subject_test.go
+git add transport/nats/nats/nats.go transport/nats/nats/subject_test.go
 git commit -m "feat(nats/subject): add Prefix type with String()"
 ```
 
@@ -231,12 +231,12 @@ git commit -m "feat(nats/subject): add Prefix type with String()"
 ### Task 3: Domain Type
 
 **Files:**
-- Modify: `transport/nats/subject/subject.go`
-- Modify: `transport/nats/subject/subject_test.go`
+- Modify: `subject/nats/subject.go`
+- Modify: `subject/nats/subject_test.go`
 
 - [ ] **Step 1: Write failing tests for Domain**
 
-Append to `transport/nats/subject/subject_test.go`:
+Append to `subject/nats/subject_test.go`:
 
 ```go
 func TestDomain(t *testing.T) {
@@ -293,10 +293,10 @@ Expected: FAIL — `Domain` type and methods not defined.
 
 - [ ] **Step 3: Implement Domain**
 
-Append to `transport/nats/subject/subject.go`:
+Append to `subject/nats/subject.go`:
 
 ```go
-// Domain represents the domain segment of a subject.
+// Domain represents the domain segment of a nats.
 type Domain struct {
 	prefix string
 	name   string
@@ -314,7 +314,7 @@ func NewDomain(name string) Domain {
 	return Domain{name: name}
 }
 
-// String returns the full subject up to and including the domain.
+// String returns the full nats up to and including the domain.
 func (d Domain) String() string {
 	if d.prefix == "" {
 		return d.name
@@ -322,7 +322,7 @@ func (d Domain) String() string {
 	return d.prefix + "." + d.name
 }
 
-// All returns a NATS ">" wildcard subject matching everything under this domain.
+// All returns a NATS ">" wildcard nats matching everything under this domain.
 func (d Domain) All() string {
 	return d.String() + ".>"
 }
@@ -336,7 +336,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add transport/nats/subject/subject.go transport/nats/subject/subject_test.go
+git add transport/nats/nats/nats.go transport/nats/nats/subject_test.go
 git commit -m "feat(nats/subject): add Domain type with All() wildcard"
 ```
 
@@ -345,12 +345,12 @@ git commit -m "feat(nats/subject): add Domain type with All() wildcard"
 ### Task 4: Entity Type
 
 **Files:**
-- Modify: `transport/nats/subject/subject.go`
-- Modify: `transport/nats/subject/subject_test.go`
+- Modify: `subject/nats/subject.go`
+- Modify: `subject/nats/subject_test.go`
 
 - [ ] **Step 1: Write failing tests for Entity**
 
-Append to `transport/nats/subject/subject_test.go`:
+Append to `subject/nats/subject_test.go`:
 
 ```go
 func TestEntity(t *testing.T) {
@@ -400,10 +400,10 @@ Expected: FAIL — `Entity` type and methods not defined.
 
 - [ ] **Step 3: Implement Entity**
 
-Append to `transport/nats/subject/subject.go`:
+Append to `subject/nats/subject.go`:
 
 ```go
-// Entity represents the entity segment of a subject.
+// Entity represents the entity segment of a nats.
 type Entity struct {
 	domain string
 	name   string
@@ -415,12 +415,12 @@ func (d Domain) Entity(name string) Entity {
 	return Entity{domain: d.String(), name: name}
 }
 
-// String returns the full subject up to and including the entity.
+// String returns the full nats up to and including the entity.
 func (e Entity) String() string {
 	return e.domain + "." + e.name
 }
 
-// All returns a NATS ">" wildcard subject matching everything under this entity.
+// All returns a NATS ">" wildcard nats matching everything under this entity.
 func (e Entity) All() string {
 	return e.String() + ".>"
 }
@@ -434,7 +434,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add transport/nats/subject/subject.go transport/nats/subject/subject_test.go
+git add transport/nats/nats/nats.go transport/nats/nats/subject_test.go
 git commit -m "feat(nats/subject): add Entity type with All() wildcard"
 ```
 
@@ -443,12 +443,12 @@ git commit -m "feat(nats/subject): add Entity type with All() wildcard"
 ### Task 5: Event Type
 
 **Files:**
-- Modify: `transport/nats/subject/subject.go`
-- Modify: `transport/nats/subject/subject_test.go`
+- Modify: `subject/nats/subject.go`
+- Modify: `subject/nats/subject_test.go`
 
 - [ ] **Step 1: Write failing tests for Event**
 
-Append to `transport/nats/subject/subject_test.go`:
+Append to `subject/nats/subject_test.go`:
 
 ```go
 func TestEvent(t *testing.T) {
@@ -484,10 +484,10 @@ Expected: FAIL — `Event` type and methods not defined.
 
 - [ ] **Step 3: Implement Event**
 
-Append to `transport/nats/subject/subject.go`:
+Append to `subject/nats/subject.go`:
 
 ```go
-// Event represents the terminal event segment of a subject.
+// Event represents the terminal event segment of a nats.
 type Event struct {
 	entity string
 	name   string
@@ -499,7 +499,7 @@ func (e Entity) Event(name string) Event {
 	return Event{entity: e.String(), name: name}
 }
 
-// String returns the complete subject string.
+// String returns the complete nats string.
 func (ev Event) String() string {
 	return ev.entity + "." + ev.name
 }
@@ -513,7 +513,7 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add transport/nats/subject/subject.go transport/nats/subject/subject_test.go
+git add transport/nats/nats/nats.go transport/nats/nats/subject_test.go
 git commit -m "feat(nats/subject): add Event type (terminal segment)"
 ```
 
@@ -522,7 +522,7 @@ git commit -m "feat(nats/subject): add Event type (terminal segment)"
 ### Task 6: Lint and Final Verification
 
 **Files:**
-- All files in `transport/nats/subject/`
+- All files in `subject/nats/`
 
 - [ ] **Step 1: Run full test suite**
 

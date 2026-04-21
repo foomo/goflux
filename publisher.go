@@ -4,9 +4,9 @@ import (
 	"context"
 )
 
-// Publisher sends encoded messages to a subject/topic.
+// Publisher sends encoded messages to a nats/topic.
 type Publisher[T any] interface {
-	// Publish serializes v via the bound Codec and delivers it to the subject.
+	// Publish serializes v via the bound Codec and delivers it to the nats.
 	Publish(ctx context.Context, subject string, v T) error
 	// Close releases any underlying connections.
 	Close() error

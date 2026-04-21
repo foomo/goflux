@@ -15,11 +15,11 @@ import (
 
 type Publisher[T any] struct {
 	js    jetstream.JetStream
-	codec goencode.Codec[T]
+	codec goencode.Codec[T, []byte]
 	tel   *goflux.Telemetry
 }
 
-func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T], opts ...Option) *Publisher[T] {
+func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
 	return &Publisher[T]{js: js, codec: codec, tel: cfg.tel}

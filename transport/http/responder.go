@@ -14,8 +14,8 @@ import (
 
 // Responder handles incoming HTTP requests and sends typed responses.
 type Responder[Req, Resp any] struct {
-	reqCodec    goencode.Codec[Req]
-	respCodec   goencode.Codec[Resp]
+	reqCodec    goencode.Codec[Req, []byte]
+	respCodec   goencode.Codec[Resp, []byte]
 	mux         *http.ServeMux
 	tel         *goflux.Telemetry
 	basePath    string
@@ -25,8 +25,8 @@ type Responder[Req, Resp any] struct {
 // NewResponder creates an HTTP request-reply server. Call Serve to register
 // subjects, then pass Mux() to your HTTP server.
 func NewResponder[Req, Resp any](
-	reqCodec goencode.Codec[Req],
-	respCodec goencode.Codec[Resp],
+	reqCodec goencode.Codec[Req, []byte],
+	respCodec goencode.Codec[Resp, []byte],
 	opts ...SubscriberOption,
 ) *Responder[Req, Resp] {
 	cfg := &subscriberConfig{
@@ -49,7 +49,7 @@ func NewResponder[Req, Resp any](
 	}
 }
 
-// Serve registers the handler for POST {basePath}/{subject}. The call blocks
+// Serve registers the handler for POST {basePath}/{nats}. The call blocks
 // until ctx is cancelled.
 func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handler goflux.RequestHandler[Req, Resp]) error {
 	r.mux.HandleFunc(r.basePath+"/"+subject, func(w http.ResponseWriter, httpReq *http.Request) {

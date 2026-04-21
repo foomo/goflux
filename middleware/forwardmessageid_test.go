@@ -31,7 +31,6 @@ func TestForwardMessageID_noID(t *testing.T) {
 
 	inner := func(ctx context.Context, msg goflux.Message[string]) error {
 		capturedCtx = ctx
-
 		return nil
 	}
 
