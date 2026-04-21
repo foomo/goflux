@@ -30,7 +30,7 @@ func TestForwardMessageID_noID(t *testing.T) {
 	var capturedCtx context.Context
 
 	inner := func(ctx context.Context, msg goflux.Message[string]) error {
-		capturedCtx = ctx
+		capturedCtx = ctx //nolint:fatcontext
 		return nil
 	}
 

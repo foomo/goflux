@@ -2,9 +2,11 @@ module github.com/foomo/goflux/bridge
 
 go 1.26.0
 
+replace github.com/foomo/goflux => ../
+
 require (
 	github.com/foomo/goflow v0.2.2
-	github.com/foomo/goflux v0.6.0
+	github.com/foomo/goflux v0.0.0
 )
 
 require (
@@ -20,10 +22,4 @@ require (
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-)
-
-replace (
-	github.com/foomo/goflow => ../../goflow
-	github.com/foomo/goflux => ../
-	github.com/foomo/gofuncy => ../../gofuncy
 )
