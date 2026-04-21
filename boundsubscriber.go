@@ -2,24 +2,29 @@ package goflux
 
 import "context"
 
-// BoundSubscriber wraps a Subscriber with a fixed subject.
-type BoundSubscriber[T any] struct {
+// BoundSubscriber subscribes to a fixed nats. No nats param needed.
+type BoundSubscriber[T any] interface {
+	// Subscribe registers handler for the bound nats. The call blocks until
+	// ctx is canceled or the implementation encounters a fatal error.
+	Subscribe(ctx context.Context, handler Handler[T]) error
+	// Close unsubscribes and releases resources.
+	Close() error
+}
+
+// BindSubscriber wraps a Subscriber with a fixed nats.
+func BindSubscriber[T any](sub Subscriber[T], subject string) BoundSubscriber[T] {
+	return &boundSubscriber[T]{sub: sub, subject: subject}
+}
+
+type boundSubscriber[T any] struct {
 	sub     Subscriber[T]
 	subject string
 }
 
-// BindSubscriber returns a BoundSubscriber that always subscribes to the given subject.
-func BindSubscriber[T any](sub Subscriber[T], subject string) *BoundSubscriber[T] {
-	return &BoundSubscriber[T]{sub: sub, subject: subject}
-}
-
-// Subscribe registers handler for the bound subject. The subject parameter is
-// ignored — the subject provided to [BindSubscriber] is always used.
-func (b *BoundSubscriber[T]) Subscribe(ctx context.Context, _ string, handler Handler[T]) error {
+func (b *boundSubscriber[T]) Subscribe(ctx context.Context, handler Handler[T]) error {
 	return b.sub.Subscribe(ctx, b.subject, handler)
 }
 
-// Close delegates to the underlying Subscriber.
-func (b *BoundSubscriber[T]) Close() error {
+func (b *boundSubscriber[T]) Close() error {
 	return b.sub.Close()
 }

@@ -7,7 +7,7 @@ type RequestHandler[Req, Resp any] func(ctx context.Context, req Req) (Resp, err
 
 // Responder handles incoming requests and produces typed responses.
 type Responder[Req, Resp any] interface {
-	// Serve registers the handler for the given subject. The call blocks
+	// Serve registers the handler for the given nats. The call blocks
 	// until ctx is cancelled or a fatal error occurs.
 	Serve(ctx context.Context, subject string, handler RequestHandler[Req, Resp]) error
 	// Close releases any underlying resources.

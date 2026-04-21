@@ -61,7 +61,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 			})
 			if err != nil {
 				slog.ErrorContext(ctx, "channel subscriber: handler error",
-					slog.String("subject", subject),
+					slog.String("nats", subject),
 					slog.Any("error", err),
 				)
 			}

@@ -3,11 +3,14 @@ package goflux_test
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/transport/channel"
 	"github.com/foomo/gofuncy"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ExampleTopic demonstrates bundling a Publisher and Subscriber into a single
@@ -48,4 +51,40 @@ func ExampleTopic() {
 
 	<-ctx.Done()
 	// Output: bundled
+}
+
+func TestBoundTopic(t *testing.T) {
+	ctx := t.Context()
+
+	bus := channel.NewBus[string]()
+	pub := channel.NewPublisher(bus)
+
+	sub, err := channel.NewSubscriber(bus, 1)
+	require.NoError(t, err)
+
+	bt := goflux.BindTopic[string](pub, sub, "bound-nats")
+
+	var got goflux.Message[string]
+
+	done := make(chan struct{})
+
+	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
+		ready()
+
+		return bt.Subscribe(ctx, func(_ context.Context, msg goflux.Message[string]) error {
+			got = msg
+
+			close(done)
+
+			return nil
+		})
+	}, gofuncy.WithName("bound-topic-subscriber"))
+
+	time.Sleep(10 * time.Millisecond)
+
+	require.NoError(t, bt.Publish(ctx, "hello"))
+	<-done
+
+	assert.Equal(t, "bound-nats", got.Subject)
+	assert.Equal(t, "hello", got.Payload)
 }

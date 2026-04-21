@@ -28,7 +28,7 @@ const (
 // Subscriber intentionally does not start its own net.Listener. Lifecycle
 // (start, graceful shutdown) belongs to the server layer above it.
 type Subscriber[T any] struct {
-	codec       goencode.Codec[T]
+	codec       goencode.Codec[T, []byte]
 	mux         *http.ServeMux
 	tel         *goflux.Telemetry
 	basePath    string
@@ -63,7 +63,7 @@ func WithTelemetry(t *goflux.Telemetry) SubscriberOption {
 
 // NewSubscriber creates an HTTP subscriber. Call Subscribe to register subjects,
 // then pass Mux() to service.NewHTTP (keel) or http.ListenAndServe.
-func NewSubscriber[T any](codec goencode.Codec[T], opts ...SubscriberOption) *Subscriber[T] {
+func NewSubscriber[T any](codec goencode.Codec[T, []byte], opts ...SubscriberOption) *Subscriber[T] {
 	cfg := &subscriberConfig{
 		basePath:    DefaultBasePath,
 		maxBodySize: DefaultMaxBodySize,
@@ -86,7 +86,7 @@ func (s *Subscriber[T]) Mux() *http.ServeMux {
 	return s.mux
 }
 
-// Subscribe registers handler for POST {basePath}/{subject} on the mux.
+// Subscribe registers handler for POST {basePath}/{nats} on the mux.
 // Multiple subjects can be registered before the server starts.
 // ctx is used as the base context for all handler invocations.
 //

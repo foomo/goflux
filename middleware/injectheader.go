@@ -25,6 +25,25 @@ func InjectMessageID[T any]() goflux.Middleware[T] {
 	}
 }
 
+// ForwardMessageID returns a [goflux.Middleware] that preserves the message ID
+// from the incoming context through the handler chain. Use this with pipe's
+// [pipe.WithMiddleware] to forward message IDs across pipe stages.
+//
+// Unlike [InjectMessageID] (which reads the ID from message headers set by
+// transports), ForwardMessageID reads from context — suitable for in-process
+// handler chains where the ID is already in context.
+func ForwardMessageID[T any]() goflux.Middleware[T] {
+	return func(next goflux.Handler[T]) goflux.Handler[T] {
+		return func(ctx context.Context, msg goflux.Message[T]) error {
+			if id := goflux.MessageID(ctx); id != "" {
+				ctx = goflux.WithMessageID(ctx, id)
+			}
+
+			return next(ctx, msg)
+		}
+	}
+}
+
 // InjectHeader returns a [goflux.Middleware] that injects the message's [goflux.Header] into
 // the context via [goflux.WithHeader]. Downstream code can read it with
 // [goflux.HeaderFromContext].

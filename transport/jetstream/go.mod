@@ -5,7 +5,7 @@ go 1.26.0
 replace github.com/foomo/goflux => ../../
 
 require (
-	github.com/foomo/goencode v0.1.0
+	github.com/foomo/goencode v0.2.0
 	github.com/foomo/goflux v0.2.2
 	github.com/foomo/gofuncy v0.2.0
 	github.com/nats-io/nats-server/v2 v2.12.7
@@ -15,11 +15,11 @@ require (
 )
 
 require (
+	charm.land/lipgloss/v2 v2.0.3 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.7.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/x/ansi v0.11.7 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260416161146-9c68a866306c // indirect
 	github.com/foomo/go v0.10.0 // indirect
-	github.com/foomo/goflow v0.2.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect

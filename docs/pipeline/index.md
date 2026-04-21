@@ -3,102 +3,170 @@
 Pipeline operators wire subscribers to publishers, composing `Handler[T]` and `Publisher[T]` into message-processing topologies. They handle filtering, transformation, and bridging to [goflow](https://github.com/foomo/goflow) streams.
 
 ::: tip Stream Processing
-For fan-out, fan-in, round-robin, and other stream-processing patterns use [goflow](https://github.com/foomo/goflow) operators via the `ToStream` / `FromStream` bridge functions.
+For fan-out, fan-in, round-robin, and other stream-processing patterns use [goflow](https://github.com/foomo/goflow) operators via the `bridge.ToStream` / `bridge.FromStream` functions in the `bridge/` submodule.
 :::
 
-## Pipe
+## pipe.New
 
 ```go
-func Pipe[T any](pub Publisher[T], opts ...PipeOption[T]) Handler[T]
+import "github.com/foomo/goflux/pipe"
+
+func New[T any](pub Publisher[T], opts ...Option[T]) Handler[T]
 ```
 
-Returns a `Handler[T]` that forwards every accepted message to `pub`, preserving the original subject. Filters run first; a dropped message never reaches the publisher. Publish errors are returned to the subscriber as-is.
+Returns a `Handler[T]` that forwards every accepted message to `pub`, preserving the original subject. The middleware chain runs first, then the filter; a filtered message returns `nil` to the transport (ack). Publish errors are returned to the subscriber as-is. The dead-letter observer is called on publish error for logging/alerting.
 
 ```go
 // Forward all order events from sub to pub
-err := sub.Subscribe(ctx, "orders.>", goflux.Pipe[OrderEvent](pub))
+err := sub.Subscribe(ctx, "orders.>", pipe.New[OrderEvent](pub))
 ```
 
-## PipeMap
+## pipe.NewMap
 
 ```go
-func PipeMap[T, U any](pub Publisher[U], mapFn MapFunc[T, U], opts ...PipeOption[T]) Handler[T]
+func NewMap[T, U any](pub Publisher[U], mapFn MapFunc[T, U], opts ...MapOption[T, U]) Handler[T]
 ```
 
-Type-transforming pipe. Maps each `Message[T]` to a `Message[U]` before publishing. Filters run on `T` before the map. A map error routes the original `Message[T]` to the dead-letter handler (if set) and drops the message -- map errors are non-fatal to the subscriber.
+Type-transforming pipe. Maps each `Message[T]` payload to a `U` value before publishing. The filter runs on `T` before the map. Map errors and publish errors are returned to the transport. The dead-letter observer is called on either failure.
 
 ```go
-mapFn := func(ctx context.Context, msg goflux.Message[OrderEvent]) (goflux.Message[Invoice], error) {
-    inv := Invoice{OrderID: msg.Payload.ID, Amount: msg.Payload.Total}
-    return goflux.NewMessage(msg.Subject, inv), nil
+mapFn := func(ctx context.Context, msg goflux.Message[OrderEvent]) (Invoice, error) {
+    return Invoice{OrderID: msg.Payload.ID, Amount: msg.Payload.Total}, nil
 }
 
-err := sub.Subscribe(ctx, "orders.created", goflux.PipeMap[OrderEvent, Invoice](
+err := sub.Subscribe(ctx, "orders.created", pipe.NewMap[OrderEvent, Invoice](
     invoicePub,
     mapFn,
 ))
 ```
 
+## pipe.NewFlatMap
+
+```go
+func NewFlatMap[T, U any](pub Publisher[U], fn FlatMapFunc[T, U], opts ...MapOption[T, U]) Handler[T]
+```
+
+Expands each `Message[T]` into zero or more `U` values, publishing each individually. If a publish fails mid-batch, items already published are NOT rolled back -- downstream consumers must be idempotent or deduplicate.
+
+```go
+flatMapFn := func(ctx context.Context, msg goflux.Message[Order]) ([]LineItem, error) {
+    items := make([]LineItem, len(msg.Payload.Items))
+    for i, item := range msg.Payload.Items {
+        items[i] = LineItem{OrderID: msg.Payload.ID, Item: item}
+    }
+    return items, nil
+}
+
+err := sub.Subscribe(ctx, "orders", pipe.NewFlatMap[Order, LineItem](itemPub, flatMapFn))
+```
+
 ## Options
 
-### WithFilter
+### Option[T] (for pipe.New)
+
+#### WithFilter
 
 ```go
-func WithFilter[T any](f Filter[T]) PipeOption[T]
+func WithFilter[T any](f Filter[T]) Option[T]
 ```
 
-Registers a filter that runs before publish (or before map in `PipeMap`). Messages for which the filter returns `false` or an error are silently dropped and logged.
+Sets a filter that runs before publish. Messages for which the filter returns `false` are skipped (handler returns `nil` to the transport).
 
 ```go
-type Filter[T any] func(ctx context.Context, msg Message[T]) (bool, error)
+type Filter[T any] func(ctx context.Context, msg Message[T]) bool
 ```
 
-Multiple filters can be stacked -- they evaluate in order and short-circuit on the first `false` or error.
-
-### WithDeadLetter
+#### WithDeadLetter
 
 ```go
-func WithDeadLetter[T any](fn DeadLetterFunc[T]) PipeOption[T]
+func WithDeadLetter[T any](fn DeadLetterFunc[T]) Option[T]
 ```
 
-Registers a dead-letter handler called when `MapFunc` returns an error or when the publisher fails. The original `Message[T]` and the terminal error are passed to the handler.
+Sets an observer called when publish fails. The observer receives the original message and the error. It does NOT swallow the error -- the error is still returned to the transport.
 
 ```go
 type DeadLetterFunc[T any] func(ctx context.Context, msg Message[T], err error)
 ```
 
+#### WithMiddleware
+
+```go
+func WithMiddleware[T any](mw ...Middleware[T]) Option[T]
+```
+
+Registers middleware that wraps the pipe's internal handler. Middleware runs before filter/map/publish -- it sees the original message and can enrich the context that flows into subsequent stages.
+
+### MapOption[T, U] (for pipe.NewMap, pipe.NewFlatMap)
+
+- `WithMapFilter[T, U](f)` -- filter before map/flatmap
+- `WithMapDeadLetter[T, U](fn)` -- observer on map/flatmap or publish failure
+- `WithMapMiddleware[T, U](mw...)` -- middleware for map/flatmap pipes
+
 ### Combined Example
 
 ```go
-handler := goflux.PipeMap[RawEvent, CleanEvent](
+handler := pipe.NewMap[RawEvent, CleanEvent](
     cleanPub,
     transformFn,
-    goflux.WithFilter[RawEvent](func(ctx context.Context, msg goflux.Message[RawEvent]) (bool, error) {
-        return msg.Payload.Valid, nil
+    pipe.WithMapFilter[RawEvent, CleanEvent](func(ctx context.Context, msg goflux.Message[RawEvent]) bool {
+        return msg.Payload.Valid
     }),
-    goflux.WithDeadLetter[RawEvent](func(ctx context.Context, msg goflux.Message[RawEvent], err error) {
+    pipe.WithMapDeadLetter[RawEvent, CleanEvent](func(ctx context.Context, msg goflux.Message[RawEvent], err error) {
         slog.ErrorContext(ctx, "dead letter",
-            slog.String("subject", msg.Subject),
+            slog.String("nats", msg.Subject),
             slog.Any("error", err),
         )
     }),
+    pipe.WithMapMiddleware[RawEvent, CleanEvent](
+        middleware.ForwardMessageID[RawEvent](),
+    ),
 )
 
 err := sub.Subscribe(ctx, "events.raw", handler)
 ```
 
-## ToStream
+## Observability
+
+Pipe adds span events and attributes to the existing transport span. No child spans are created.
+
+### Span Attributes
+
+| Attribute | Value | When |
+|-----------|-------|------|
+| `pipe.type` | `"forward"` / `"map"` / `"flatmap"` | Always |
+| `pipe.filtered` | `true` | Filter rejected message |
+| `pipe.items_published` | `int` | FlatMap only |
+
+### Span Events
+
+| Event | Attributes | When |
+|-------|-----------|------|
+| `pipe.dead_letter` | `pipe.error` | Dead-letter observer called |
+| `pipe.publish_error` | `pipe.error` | Publish failed |
+| `pipe.map_error` | `pipe.error` | Map/FlatMap func failed |
+
+## Error Semantics
+
+| Stage | On failure | Return value |
+|-------|-----------|--------------|
+| Filter | Rejects message | `nil` -- intentional skip, transport acks |
+| MapFunc | Transform fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
+| FlatMapFunc | Transform fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
+| Publish | Publish fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
+
+## bridge.ToStream
 
 ```go
+import "github.com/foomo/goflux/bridge"
+
 func ToStream[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) goflow.Stream[Message[T]]
 ```
 
-Bridges a `Subscriber[T]` into a `goflow.Stream`. All [goflow](https://github.com/foomo/goflow) operators (Filter, Map, Distinct, FanOut, etc.) can be applied to the returned stream.
+Bridges a `Subscriber[T]` into a `goflow.Stream`. All [goflow](https://github.com/foomo/goflow) operators (Filter, Map, Distinct, FanOut, etc.) can be applied to the returned stream. Lives in the `bridge/` submodule (own `go.mod`) to isolate the goflow dependency.
 
 ```go
-stream := goflux.ToStream[Event](ctx, sub, "orders.>", 16)
+stream := bridge.ToStream[Event](ctx, sub, "orders.>", 16)
 
-// Apply goflow operators
 stream.
     Filter(func(ctx context.Context, msg goflux.Message[Event]) bool {
         return msg.Payload.Total > 100
@@ -108,42 +176,38 @@ stream.
     })
 ```
 
-## FromStream
+## bridge.FromStream
 
 ```go
-func FromStream[T any](stream goflow.Stream[Message[T]], pub Publisher[T], subject string) error
+func FromStream[T any](stream goflow.Stream[Message[T]], pub Publisher[T]) error
 ```
 
-Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. When `subject` is non-empty every message is published to that subject; when empty the original message subject is preserved. Blocks until the stream is exhausted or the context is cancelled.
+Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. The original message subject is used for publishing. Blocks until the stream is exhausted or the context is cancelled.
 
 ```go
-stream := goflux.ToStream[RawEvent](ctx, sub, "events.raw", 16)
+stream := bridge.ToStream[RawEvent](ctx, sub, "events.raw", 16)
 
-// Transform with goflow, then publish to a different subject
 mapped := goflow.Map(stream, func(ctx context.Context, msg goflux.Message[RawEvent]) (goflux.Message[RawEvent], error) {
     msg.Payload.Processed = true
     return msg, nil
 })
 
-err := goflux.FromStream(mapped, pub, "events.processed")
+err := bridge.FromStream(mapped, pub)
 ```
 
-## BoundPublisher
+## BindPublisher
 
 ```go
-func Bind[T any](pub Publisher[T], subject string) *BoundPublisher[T]
+func BindPublisher[T any](pub Publisher[T], subject string) BoundPublisher[T]
 ```
 
 Wraps a `Publisher[T]` with a fixed subject. Useful when a component always publishes to the same destination and the subject should not leak into business logic.
 
 ```go
-orderPub := goflux.Bind[OrderEvent](pub, "orders.created")
+orderPub := goflux.BindPublisher[OrderEvent](pub, "orders.created")
 
-// The subject argument is ignored -- "orders.created" is always used
-err := orderPub.Publish(ctx, "", event)
+err := orderPub.Publish(ctx, event)
 ```
-
-`BoundPublisher` implements `Publisher[T]` — the subject parameter in `Publish` is ignored. `Close()` delegates to the underlying publisher.
 
 ## ToChan
 
@@ -178,4 +242,3 @@ retrying := goflux.RetryPublisher[Event](pub, 3, func(attempt int) time.Duration
 
 err := retrying.Publish(ctx, "events.order", event)
 ```
-

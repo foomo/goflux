@@ -20,8 +20,8 @@ import (
 // Requester sends typed requests over HTTP POST and deserializes responses.
 type Requester[Req, Resp any] struct {
 	baseURL    string
-	reqCodec   goencode.Codec[Req]
-	respCodec  goencode.Codec[Resp]
+	reqCodec   goencode.Codec[Req, []byte]
+	respCodec  goencode.Codec[Resp, []byte]
 	httpClient *http.Client
 	tel        *goflux.Telemetry
 }
@@ -30,8 +30,8 @@ type Requester[Req, Resp any] struct {
 // default client with a 10s timeout is used.
 func NewRequester[Req, Resp any](
 	baseURL string,
-	reqCodec goencode.Codec[Req],
-	respCodec goencode.Codec[Resp],
+	reqCodec goencode.Codec[Req, []byte],
+	respCodec goencode.Codec[Resp, []byte],
 	client *http.Client,
 	opts ...PublisherOption,
 ) *Requester[Req, Resp] {
@@ -50,7 +50,7 @@ func NewRequester[Req, Resp any](
 	}
 }
 
-// Request sends req to {baseURL}/{subject} and returns the decoded response.
+// Request sends req to {baseURL}/{nats} and returns the decoded response.
 func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req Req) (Resp, error) {
 	var result Resp
 

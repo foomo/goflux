@@ -5,7 +5,7 @@ Stream processing combines goflux transports with [goflow](https://github.com/fo
 ## Overview
 
 ```go
-stream := goflux.ToStream[Event](ctx, sub, "events.>", 16)
+stream := bridge.ToStream[Event](ctx, sub, "events.>", 16)
 
 // Apply goflow operators for stream processing.
 stream.
@@ -23,7 +23,7 @@ stream.
 For JetStream subscribers with explicit ack, combine the goflow stream with goflux's messaging-specific middleware:
 
 ```go
-stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)
+stream := bridge.ToStream[Task](ctx, sub, "tasks.>", 16)
 
 policy := middleware.NewRetryPolicy(5 * time.Second)
 
@@ -58,6 +58,6 @@ err := sub.Subscribe(ctx, "tasks.>", handler)
 
 ## When to Use
 
-- **Stream operators** -- use `ToStream` + goflow when you need filtering, deduplication, throttling, fan-out/fan-in, or other stream-processing operators
+- **Stream operators** -- use `bridge.ToStream` + goflow when you need filtering, deduplication, throttling, fan-out/fan-in, or other stream-processing operators
 - **Simple handler chains** -- use `Chain` + middleware when you only need ack/nak behavior and the handler model is sufficient
-- **Forwarding** -- use `FromStream` to publish processed stream elements to another transport
+- **Forwarding** -- use `bridge.FromStream` to publish processed stream elements to another transport

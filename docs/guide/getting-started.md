@@ -56,7 +56,7 @@ func main() {
 
 	// Define a handler -- same signature regardless of transport.
 	handler := func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
-		fmt.Printf("received: subject=%s order=%s status=%s\n",
+		fmt.Printf("received: nats=%s order=%s status=%s\n",
 			msg.Subject, msg.Payload.OrderID, msg.Payload.Status)
 		return nil
 	}
@@ -81,7 +81,7 @@ func main() {
 
 	cancel()
 	<-done
-	// Output: received: subject=orders order=ORD-42 status=confirmed
+	// Output: received: nats=orders order=ORD-42 status=confirmed
 }
 ```
 

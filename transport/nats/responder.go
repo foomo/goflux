@@ -16,16 +16,16 @@ import (
 // Responder handles incoming NATS requests and sends typed responses.
 type Responder[Req, Resp any] struct {
 	conn      *nats.Conn
-	reqCodec  goencode.Codec[Req]
-	respCodec goencode.Codec[Resp]
+	reqCodec  goencode.Codec[Req, []byte]
+	respCodec goencode.Codec[Resp, []byte]
 	tel       *goflux.Telemetry
 }
 
 // NewResponder creates a NATS request-reply server.
 func NewResponder[Req, Resp any](
 	conn *nats.Conn,
-	reqCodec goencode.Codec[Req],
-	respCodec goencode.Codec[Resp],
+	reqCodec goencode.Codec[Req, []byte],
+	respCodec goencode.Codec[Resp, []byte],
 	opts ...Option,
 ) *Responder[Req, Resp] {
 	cfg := applyOpts(opts)
@@ -38,14 +38,14 @@ func NewResponder[Req, Resp any](
 	}
 }
 
-// Serve registers the handler for the given subject. The call blocks until
+// Serve registers the handler for the given nats. The call blocks until
 // ctx is cancelled.
 func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handler goflux.RequestHandler[Req, Resp]) error {
 	sub, err := r.conn.Subscribe(subject, func(msg *nats.Msg) {
 		var req Req
 		if err := r.reqCodec.Decode(msg.Data, &req); err != nil {
 			slog.ErrorContext(ctx, "nats responder: decode failed, dropping request",
-				slog.String("subject", msg.Subject),
+				slog.String("nats", msg.Subject),
 				slog.Any("error", err),
 			)
 

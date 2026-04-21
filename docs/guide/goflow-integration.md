@@ -25,6 +25,7 @@ import (
 	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflow"
 	"github.com/foomo/goflux"
+	"github.com/foomo/goflux/bridge"
 	gofluxhttp "github.com/foomo/goflux/transport/http"
 	gofluxjs "github.com/foomo/goflux/transport/jetstream"
 	"github.com/foomo/gofuncy"
@@ -72,7 +73,7 @@ func main() {
 	// 2. Bridge HTTP subscriber into a goflow stream
 	// ---------------------------------------------------------------
 
-	stream := goflux.ToStream[WebhookEvent](ctx, httpSub, "webhooks.>", 64)
+	stream := bridge.ToStream[WebhookEvent](ctx, httpSub, "webhooks.>", 64)
 
 	// ---------------------------------------------------------------
 	// 3. Apply goflow operators
@@ -101,12 +102,12 @@ func main() {
 
 	// Branch 1: archive stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return goflux.FromStream(streams[0], archivePub, "events.archive")
+		return bridge.FromStream(streams[0], archivePub)
 	}, gofuncy.WithName("archive-publisher"))
 
 	// Branch 2: notification stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return goflux.FromStream(streams[1], notifyPub, "events.notify")
+		return bridge.FromStream(streams[1], notifyPub)
 	}, gofuncy.WithName("notify-publisher"))
 
 	// ---------------------------------------------------------------
@@ -175,8 +176,8 @@ HTTP POST /webhooks/orders.new
 |---------|--------|--------|
 | Receive messages from a transport | `Subscriber[T]` | - |
 | Send messages to a transport | `Publisher[T]` | - |
-| Bridge subscriber to stream | `ToStream` | `From` (used internally) |
-| Bridge stream to publisher | `FromStream` | `ForEach` (used internally) |
+| Bridge subscriber to stream | `bridge.ToStream` | `From` (used internally) |
+| Bridge stream to publisher | `bridge.FromStream` | `ForEach` (used internally) |
 | Filter messages | - | `Stream.Filter` |
 | Log / side-effect | - | `Stream.Peek` |
 | Broadcast to N consumers | - | `Stream.Tee(n)` |
@@ -200,11 +201,11 @@ Replace `Tee` with `FanOut` to distribute messages across publishers instead of 
 workers := logged.FanOut(2)
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return goflux.FromStream(workers[0], archivePub, "events.archive")
+    return bridge.FromStream(workers[0], archivePub)
 }, gofuncy.WithName("worker-0"))
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return goflux.FromStream(workers[1], notifyPub, "events.notify")
+    return bridge.FromStream(workers[1], notifyPub)
 }, gofuncy.WithName("worker-1"))
 ```
 
@@ -225,8 +226,8 @@ streams := deduped.Tee(2)
 Use `ToStream` on each subscriber and `goflow.FanIn` to merge before processing:
 
 ```go
-httpStream := goflux.ToStream[Event](ctx, httpSub, "events.>", 16)
-natsStream := goflux.ToStream[Event](ctx, natsSub, "events.>", 16)
+httpStream := bridge.ToStream[Event](ctx, httpSub, "events.>", 16)
+natsStream := bridge.ToStream[Event](ctx, natsSub, "events.>", 16)
 
 merged := goflow.FanIn([]goflow.Stream[goflux.Message[Event]]{httpStream, natsStream})
 
@@ -239,7 +240,7 @@ merged.Filter(...).Peek(...).Process(10, fn)
 Use `Process` for a worker pool that explicitly acknowledges each message:
 
 ```go
-stream := goflux.ToStream[Task](ctx, jsSub, "tasks.>", 32)
+stream := bridge.ToStream[Task](ctx, jsSub, "tasks.>", 32)
 
 stream.Process(8, func(ctx context.Context, msg goflux.Message[Task]) error {
     if err := handleTask(ctx, msg.Payload); err != nil {

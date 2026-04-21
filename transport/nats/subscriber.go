@@ -15,12 +15,12 @@ import (
 
 type Subscriber[T any] struct {
 	conn       *nats.Conn
-	codec      goencode.Codec[T]
+	codec      goencode.Codec[T, []byte]
 	tel        *goflux.Telemetry
 	queueGroup string
 }
 
-func NewSubscriber[T any](conn *nats.Conn, codec goencode.Codec[T], opts ...Option) *Subscriber[T] {
+func NewSubscriber[T any](conn *nats.Conn, codec goencode.Codec[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 
 	return &Subscriber[T]{conn: conn, codec: codec, tel: cfg.tel, queueGroup: cfg.queueGroup}
@@ -31,7 +31,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		var v T
 		if err := s.codec.Decode(msg.Data, &v); err != nil {
 			slog.ErrorContext(ctx, "nats subscriber: decode failed, dropping message",
-				slog.String("subject", msg.Subject),
+				slog.String("nats", msg.Subject),
 				slog.Any("error", err),
 			)
 
@@ -60,7 +60,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 			return handler(ctx, m)
 		}, goflux.WithRemoteSpanContext(remoteSpanCtx)); err != nil {
 			slog.ErrorContext(msgCtx, "nats subscriber: handler error",
-				slog.String("subject", subject),
+				slog.String("nats", subject),
 				slog.Any("error", err),
 			)
 		}

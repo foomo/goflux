@@ -18,8 +18,8 @@ Write business logic against core interfaces. Swap transports without touching h
 |-------|-----------------|
 | **Core Interfaces** | `Publisher[T]`, `Subscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
 | **Transports** | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces |
-| **Middleware** | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader` |
-| **Pipeline Operators** | `Pipe`, `PipeMap`, `ToStream`, `FromStream`, `ToChan`, `BoundPublisher`, `RetryPublisher` |
+| **Middleware** | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID` |
+| **Pipeline Operators** | `pipe.New`, `pipe.NewMap`, `pipe.NewFlatMap`, `ToChan`, `bridge.ToStream`, `bridge.FromStream`, `BindPublisher`, `RetryPublisher` |
 | **Stream Processing** | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow) |
 | **Lifecycle** | `Group` — coordinated startup, fail-fast shutdown for multiple handlers |
 | **Telemetry** | OpenTelemetry tracing and metrics built into every transport |
@@ -31,7 +31,7 @@ Write business logic against core interfaces. Swap transports without touching h
 - **Pull Consumer** — JetStream pull consumers via `Subscriber[T]` with middleware composition (JetStream)
 - **Request-Reply** — typed request/response (NATS, HTTP)
 - **Queue Groups** — competing consumers (NATS)
-- **Stream Processing** — bridge to [goflow](https://github.com/foomo/goflow) via `ToStream`/`FromStream` for bounded concurrency, filtering, dedup, fan-out/fan-in, and more
+- **Stream Processing** — bridge to [goflow](https://github.com/foomo/goflow) via `bridge.ToStream`/`bridge.FromStream` for bounded concurrency, filtering, dedup, fan-out/fan-in, and more
 - **Fan-Out / Fan-In** — broadcast, merge, round-robin via goflow stream operators
 
 ## Transport Feature Matrix

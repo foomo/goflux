@@ -8,7 +8,7 @@ This page covers every core type in goflux and the rules that govern how they in
 
 ```go
 type Message[T any] struct {
-    Subject string `json:"subject"`
+    Subject string `json:"nats"`
     Payload T      `json:"payload"`
     Header  Header `json:"header,omitempty"`
     // unexported: acker Acker
@@ -233,9 +233,9 @@ go func() {
 
 ```go
 pub := gofluxnats.NewPublisher(conn, codec)
-bound := goflux.Bind(pub, "orders.created")
+bound := goflux.BindPublisher(pub, "orders.created")
 
-// No subject argument needed.
+// No nats argument needed.
 err := bound.Publish(ctx, OrderEvent{ID: "42"})
 ```
 
@@ -258,7 +258,7 @@ wrapped := goflux.Chain[OrderEvent](
 )(handler)
 ```
 
-See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`). For stream-processing operators (concurrency, filtering, deduplication, throttling), use [goflow](https://github.com/foomo/goflow) via `ToStream`.
+See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`). For stream-processing operators (concurrency, filtering, deduplication, throttling), use [goflow](https://github.com/foomo/goflow) via `bridge.ToStream`.
 
 ## Key Design Rules
 

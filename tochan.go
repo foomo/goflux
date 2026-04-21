@@ -6,8 +6,8 @@ import (
 	"github.com/foomo/gofuncy"
 )
 
-// ToChan bridges a Subscriber into a plain channel. It launches Subscribe in a
-// goroutine and forwards each message (including acker) into a buffered
+// ToChan bridges a [Subscriber] into a plain channel. It launches Subscribe in
+// a goroutine and forwards each message (including acker) into a buffered
 // channel. The returned channel closes when ctx is cancelled.
 //
 // bufSize controls backpressure: a full buffer blocks the subscriber's handler

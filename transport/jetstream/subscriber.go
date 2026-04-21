@@ -15,12 +15,12 @@ import (
 
 type Subscriber[T any] struct {
 	consumer  jetstream.Consumer
-	codec     goencode.Codec[T]
+	codec     goencode.Codec[T, []byte]
 	tel       *goflux.Telemetry
 	manualAck bool
 }
 
-func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T], opts ...Option) *Subscriber[T] {
+func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 
 	return &Subscriber[T]{
@@ -34,7 +34,7 @@ func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T], 
 // Subscribe starts consuming messages and dispatching them to handler. The call
 // blocks until ctx is cancelled.
 //
-// Note: the subject parameter is used only for telemetry labeling. Actual
+// Note: the nats parameter is used only for telemetry labeling. Actual
 // message filtering is determined by the jetstream.Consumer configuration
 // passed to [NewSubscriber].
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
@@ -42,7 +42,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		var v T
 		if err := s.codec.Decode(msg.Data(), &v); err != nil {
 			slog.ErrorContext(ctx, "jetstream subscriber: decode failed, terminating message",
-				slog.String("subject", msg.Subject()),
+				slog.String("nats", msg.Subject()),
 				slog.Any("error", err),
 			)
 			_ = msg.Term()
@@ -76,7 +76,7 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 			return handler(ctx, m)
 		}, goflux.WithRemoteSpanContext(remoteSpanCtx)); err != nil {
 			slog.ErrorContext(msgCtx, "jetstream subscriber: handler error",
-				slog.String("subject", subject),
+				slog.String("nats", subject),
 				slog.Any("error", err),
 			)
 
