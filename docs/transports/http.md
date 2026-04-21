@@ -16,7 +16,7 @@ The HTTP transport sends messages as HTTP POST requests and receives them via an
 ## Publisher
 
 ```go
-func NewPublisher[T any](baseURL string, codec goencode.Codec[T], client *http.Client, opts ...PublisherOption) *Publisher[T]
+func NewPublisher[T any](baseURL string, encoder goencode.Encoder[T, []byte], client *http.Client, opts ...PublisherOption) *Publisher[T]
 ```
 
 `Publish` encodes the value and POSTs it to `{baseURL}/{subject}`. OTel context is injected into HTTP headers via the standard W3C `propagation.HeaderCarrier`. goflux context headers are sent as `X-Goflux-{key}` HTTP headers.
@@ -28,7 +28,7 @@ If `client` is nil, a default `*http.Client` with a 10-second timeout is used. A
 ## Subscriber
 
 ```go
-func NewSubscriber[T any](codec goencode.Codec[T], opts ...SubscriberOption) *Subscriber[T]
+func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...SubscriberOption) *Subscriber[T]
 ```
 
 `Subscribe` registers a handler for `POST {basePath}/{subject}` on the subscriber's internal `*http.ServeMux`, then blocks until the context is cancelled. The subscriber exposes two ways to integrate with an HTTP server:
@@ -132,7 +132,7 @@ func main() {
 	codec := json.NewCodec[Event]()
 
 	// Subscriber -- exposes an HTTP handler, does not own a listener.
-	sub := gofluxhttp.NewSubscriber[Event](codec, gofluxhttp.WithBasePath("/hooks"))
+	sub := gofluxhttp.NewSubscriber[Event](codec.Decode, gofluxhttp.WithBasePath("/hooks"))
 
 	// Register a handler for POST /hooks/events.created
 	handler := sub.Handler("events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
@@ -152,7 +152,7 @@ func main() {
 	}()
 
 	// Publisher -- POSTs to the subscriber's endpoint.
-	pub := gofluxhttp.NewPublisher[Event]("http://localhost:8080/hooks", codec, nil)
+	pub := gofluxhttp.NewPublisher[Event]("http://localhost:8080/hooks", codec.Encode, nil)
 
 	if err := pub.Publish(ctx, "events.created", Event{ID: "1", Name: "signup"}); err != nil {
 		log.Fatal(err)

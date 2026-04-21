@@ -14,20 +14,20 @@ import (
 )
 
 type Publisher[T any] struct {
-	js    jetstream.JetStream
-	codec goencode.Codec[T, []byte]
-	tel   *goflux.Telemetry
+	js      jetstream.JetStream
+	encoder goencode.Encoder[T, []byte]
+	tel     *goflux.Telemetry
 }
 
-func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T, []byte], opts ...Option) *Publisher[T] {
+func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
-	return &Publisher[T]{js: js, codec: codec, tel: cfg.tel}
+	return &Publisher[T]{js: js, encoder: encoder, tel: cfg.tel}
 }
 
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
-		b, err := p.codec.Encode(v)
+		b, err := p.encoder(v)
 		if err != nil {
 			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("jetstream: %w", err))
 		}

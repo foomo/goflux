@@ -46,7 +46,7 @@ func main() {
 	})
 
 	codec := json.NewCodec[Event]()
-	sub := gofluxjs.NewSubscriber[Event](consumer, codec)
+	sub := gofluxjs.NewSubscriber[Event](consumer, codec.Decode)
 
 	// nil return = ack, non-nil return = nak (automatic).
 	_ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {
@@ -63,7 +63,7 @@ func process(_ Event) error { return nil }
 For fine-grained control, enable manual acknowledgment with `gofluxjs.WithManualAck()`. The handler is then responsible for calling one of the ack methods on every message.
 
 ```go
-sub := gofluxjs.NewSubscriber[Event](consumer, codec, gofluxjs.WithManualAck())
+sub := gofluxjs.NewSubscriber[Event](consumer, codec.Decode, gofluxjs.WithManualAck())
 
 _ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {
 	if err := process(msg.Payload); err != nil {

@@ -28,7 +28,7 @@ const (
 // Subscriber intentionally does not start its own net.Listener. Lifecycle
 // (start, graceful shutdown) belongs to the server layer above it.
 type Subscriber[T any] struct {
-	codec       goencode.Codec[T, []byte]
+	decoder     goencode.Decoder[T, []byte]
 	mux         *http.ServeMux
 	tel         *goflux.Telemetry
 	basePath    string
@@ -63,7 +63,7 @@ func WithTelemetry(t *goflux.Telemetry) SubscriberOption {
 
 // NewSubscriber creates an HTTP subscriber. Call Subscribe to register subjects,
 // then pass Mux() to service.NewHTTP (keel) or http.ListenAndServe.
-func NewSubscriber[T any](codec goencode.Codec[T, []byte], opts ...SubscriberOption) *Subscriber[T] {
+func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...SubscriberOption) *Subscriber[T] {
 	cfg := &subscriberConfig{
 		basePath:    DefaultBasePath,
 		maxBodySize: DefaultMaxBodySize,
@@ -76,7 +76,7 @@ func NewSubscriber[T any](codec goencode.Codec[T, []byte], opts ...SubscriberOpt
 
 	return &Subscriber[T]{
 		mux:         http.NewServeMux(),
-		codec:       codec,
+		decoder:     decoder,
 		tel:         cfg.tel,
 		maxBodySize: cfg.maxBodySize,
 	}
@@ -124,7 +124,7 @@ func (s *Subscriber[T]) Handler(subject string, handler goflux.Handler[T]) http.
 		}
 
 		var v T
-		if err := s.codec.Decode(body, &v); err != nil {
+		if err := s.decoder(body, &v); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 
 			return

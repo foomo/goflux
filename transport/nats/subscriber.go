@@ -15,21 +15,21 @@ import (
 
 type Subscriber[T any] struct {
 	conn       *nats.Conn
-	codec      goencode.Codec[T, []byte]
+	decoder    goencode.Decoder[T, []byte]
 	tel        *goflux.Telemetry
 	queueGroup string
 }
 
-func NewSubscriber[T any](conn *nats.Conn, codec goencode.Codec[T, []byte], opts ...Option) *Subscriber[T] {
+func NewSubscriber[T any](conn *nats.Conn, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 
-	return &Subscriber[T]{conn: conn, codec: codec, tel: cfg.tel, queueGroup: cfg.queueGroup}
+	return &Subscriber[T]{conn: conn, decoder: decoder, tel: cfg.tel, queueGroup: cfg.queueGroup}
 }
 
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
 	cb := func(msg *nats.Msg) {
 		var v T
-		if err := s.codec.Decode(msg.Data, &v); err != nil {
+		if err := s.decoder(msg.Data, &v); err != nil {
 			slog.ErrorContext(ctx, "nats subscriber: decode failed, dropping message",
 				slog.String("nats", msg.Subject),
 				slog.Any("error", err),

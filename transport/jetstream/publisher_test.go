@@ -35,7 +35,7 @@ func ExampleNewPublisher() {
 		panic(err)
 	}
 
-	pub := fluxjetstream.NewPublisher(js, json.NewCodec[Event]())
+	pub := fluxjetstream.NewPublisher(js, json.NewCodec[Event]().Encode)
 	if err := pub.Publish(context.Background(), "events.created", Event{ID: "1", Name: "foo"}); err != nil {
 		panic(err)
 	}

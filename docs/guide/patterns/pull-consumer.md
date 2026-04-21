@@ -52,7 +52,7 @@ func main() {
 	codec := json.NewCodec[Task]()
 
 	// Create a subscriber from the pull consumer -- same interface as push.
-	sub := gofluxjs.NewSubscriber[Task](cons, codec, gofluxjs.WithManualAck())
+	sub := gofluxjs.NewSubscriber[Task](cons, codec.Decode, gofluxjs.WithManualAck())
 
 	// Use ToStream to bridge into goflow for stream processing.
 	stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)

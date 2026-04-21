@@ -39,8 +39,8 @@ func main() {
 
 	// Both subscribers join the "workers" queue group.
 	// Each task is delivered to exactly one of them.
-	sub1 := gofluxnats.NewSubscriber[Task](conn, codec, gofluxnats.WithQueueGroup("workers"))
-	sub2 := gofluxnats.NewSubscriber[Task](conn, codec, gofluxnats.WithQueueGroup("workers"))
+	sub1 := gofluxnats.NewSubscriber[Task](conn, codec.Decode, gofluxnats.WithQueueGroup("workers"))
+	sub2 := gofluxnats.NewSubscriber[Task](conn, codec.Decode, gofluxnats.WithQueueGroup("workers"))
 
 	handler := func(ctx context.Context, msg goflux.Message[Task]) error {
 		fmt.Printf("processing task %s\n", msg.Payload.ID)
@@ -51,7 +51,7 @@ func main() {
 	go func() { _ = sub2.Subscribe(ctx, "tasks.>", handler) }()
 
 	// Publish tasks — each one goes to exactly one worker.
-	pub := gofluxnats.NewPublisher[Task](conn, codec)
+	pub := gofluxnats.NewPublisher[Task](conn, codec.Encode)
 	for i := 0; i < 10; i++ {
 		_ = pub.Publish(ctx, "tasks.process", Task{
 			ID:   fmt.Sprintf("task-%d", i),
@@ -69,11 +69,11 @@ In a typical deployment, each service instance creates one subscriber with the s
 
 ```go
 // Instance A
-sub := gofluxnats.NewSubscriber[Task](conn, codec, gofluxnats.WithQueueGroup("order-processor"))
+sub := gofluxnats.NewSubscriber[Task](conn, codec.Decode, gofluxnats.WithQueueGroup("order-processor"))
 _ = sub.Subscribe(ctx, "orders.>", handler)
 
 // Instance B (separate process, same queue group name)
-sub := gofluxnats.NewSubscriber[Task](conn, codec, gofluxnats.WithQueueGroup("order-processor"))
+sub := gofluxnats.NewSubscriber[Task](conn, codec.Decode, gofluxnats.WithQueueGroup("order-processor"))
 _ = sub.Subscribe(ctx, "orders.>", handler)
 ```
 

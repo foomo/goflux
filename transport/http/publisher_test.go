@@ -12,8 +12,6 @@ import (
 )
 
 func ExampleNewPublisher() {
-	c := json.NewCodec[Event]()
-
 	s := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		req, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -23,7 +21,7 @@ func ExampleNewPublisher() {
 		fmt.Println(string(req))
 	}))
 
-	pub := http.NewPublisher(s.URL, c, s.Client())
+	pub := http.NewPublisher(s.URL, json.NewCodec[Event]().Encode, s.Client())
 	if err := pub.Publish(context.Background(), "http", Event{ID: "1", Name: "foo"}); err != nil {
 		panic(err)
 	}

@@ -58,10 +58,10 @@ type Publisher[T any] interface {
 }
 ```
 
-The subject is specified at the call site, not at construction time. `Publish` serializes `v` via the transport's codec (if any) and delivers it:
+The subject is specified at the call site, not at construction time. `Publish` serializes `v` via the transport's encoder (if any) and delivers it:
 
 ```go
-pub := gofluxnats.NewPublisher(conn, codec)
+pub := gofluxnats.NewPublisher(conn, codec.Encode)
 
 err := pub.Publish(ctx, "orders.created", OrderEvent{ID: "42"})
 ```
@@ -82,7 +82,7 @@ type Subscriber[T any] interface {
 :::
 
 ```go
-sub := gofluxnats.NewSubscriber(conn, codec)
+sub := gofluxnats.NewSubscriber(conn, codec.Decode)
 
 go func() {
     if err := sub.Subscribe(ctx, "orders.created", handler); err != nil {
@@ -232,7 +232,7 @@ go func() {
 `BoundPublisher[T]` wraps a `Publisher[T]` with a fixed subject, removing the subject parameter from `Publish`:
 
 ```go
-pub := gofluxnats.NewPublisher(conn, codec)
+pub := gofluxnats.NewPublisher(conn, codec.Encode)
 bound := goflux.BindPublisher(pub, "orders.created")
 
 // No nats argument needed.
@@ -267,7 +267,7 @@ See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `Re
 2. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
 3. **Close semantics vary.** `Close()` on channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
 4. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
-5. **Codecs are stateless.** Share them freely across publishers and subscribers.
+5. **Encoders and decoders are stateless function types.** Share them freely. Use `codec.Encode` / `codec.Decode` or compose with `PipeEncoder` / `PipeDecoder`.
 6. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.
 :::
 

@@ -145,8 +145,8 @@ func main() {
 	defer conn.Close()
 
 	codec := json.NewCodec[OrderEvent]()
-	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec)
-	sub := gofluxnats.NewSubscriber[OrderEvent](conn, codec)
+	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec.Encode)
+	sub := gofluxnats.NewSubscriber[OrderEvent](conn, codec.Decode)
 
 	// Subscribe to a single event.
 	go func() {

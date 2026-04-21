@@ -13,20 +13,20 @@ import (
 )
 
 type Publisher[T any] struct {
-	conn       *nats.Conn
-	serializer goencode.Codec[T, []byte]
-	tel        *goflux.Telemetry
+	conn    *nats.Conn
+	encoder goencode.Encoder[T, []byte]
+	tel     *goflux.Telemetry
 }
 
-func NewPublisher[T any](conn *nats.Conn, serializer goencode.Codec[T, []byte], opts ...Option) *Publisher[T] {
+func NewPublisher[T any](conn *nats.Conn, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
-	return &Publisher[T]{conn: conn, serializer: serializer, tel: cfg.tel}
+	return &Publisher[T]{conn: conn, encoder: encoder, tel: cfg.tel}
 }
 
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
-		b, err := p.serializer.Encode(v)
+		b, err := p.encoder(v)
 		if err != nil {
 			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("nats: %w", err))
 		}

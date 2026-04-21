@@ -15,17 +15,17 @@ import (
 
 type Subscriber[T any] struct {
 	consumer  jetstream.Consumer
-	codec     goencode.Codec[T, []byte]
+	decoder   goencode.Decoder[T, []byte]
 	tel       *goflux.Telemetry
 	manualAck bool
 }
 
-func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T, []byte], opts ...Option) *Subscriber[T] {
+func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 
 	return &Subscriber[T]{
 		consumer:  consumer,
-		codec:     codec,
+		decoder:   decoder,
 		tel:       cfg.tel,
 		manualAck: cfg.manualAck,
 	}
@@ -40,7 +40,7 @@ func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T, [
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
 	cc, err := s.consumer.Consume(func(msg jetstream.Msg) {
 		var v T
-		if err := s.codec.Decode(msg.Data(), &v); err != nil {
+		if err := s.decoder(msg.Data(), &v); err != nil {
 			slog.ErrorContext(ctx, "jetstream subscriber: decode failed, terminating message",
 				slog.String("nats", msg.Subject()),
 				slog.Any("error", err),

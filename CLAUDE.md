@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 github.com/foomo/goflux
 ```
 
-Multi-module workspace — submodules in `pkg/channel/`, `pkg/nats/`, `pkg/http/` each have their own `go.mod`. Use `go work` (auto-initialized by `make`).
+Multi-module workspace — submodules in `pkg/channel/`, `pkg/nats/`, `pkg/http/` each have their own `go.mod`. Use
+`go work` (auto-initialized by `make`).
 
 ## Commands
 
@@ -23,11 +24,13 @@ make audit          # trivy vulnerability scan
 ```
 
 Run a single test:
+
 ```sh
 go test -tags=safe -run TestName ./...
 ```
 
 Run tests in a submodule:
+
 ```sh
 cd transport/nats && go test -tags=safe -v ./...
 ```
@@ -43,12 +46,14 @@ mise installs: golangci-lint, lefthook, trivy, bun (for docs). Run `mise install
 Enforced by lefthook pre-commit and commit-msg hooks:
 
 - **Branch names**: must start with `feature/` or `fix/`
-- **Commit messages**: Conventional Commits format — `type(scope?): subject` (max 50 chars in subject). Types: `build|chore|ci|docs|feat|fix|perf|refactor|style|test|sec|wip|revert`
+- **Commit messages**: Conventional Commits format — `type(scope?): subject` (max 50 chars in subject). Types:
+  `build|chore|ci|docs|feat|fix|perf|refactor|style|test|sec|wip|revert`
 - **Pre-commit**: runs `golangci-lint fmt` on staged `.go` files and `golangci-lint run --new --fast-only`
 
 ## Architecture
 
-goflux is a generic, transport-agnostic pub/sub messaging library. Business logic is written against core interfaces; transports are swapped without touching handler code.
+goflux is a generic, transport-agnostic pub/sub messaging library. Business logic is written against core interfaces;
+transports are swapped without touching handler code.
 
 ### Core Interfaces (root package)
 
@@ -60,14 +65,17 @@ goflux is a generic, transport-agnostic pub/sub messaging library. Business logi
 
 ### Transports (submodules)
 
-| Package | Transport | Notes |
-|---------|-----------|-------|
-| `pkg/channel/` | In-process channels | `Bus[T]` broker, backpressure by blocking, no codec needed |
-| `pkg/nats/` | NATS core | Wraps `*nats.Conn`, uses `goencode.Codec[T]`, no ack/nack |
-| `pkg/http/` | HTTP POST | Publisher POSTs to `{baseURL}/{subject}`, Subscriber exposes `http.ServeMux` (does not own listener) |
-| `bridge/` | goflow stream | Own `go.mod`, isolates goflow dependency from root module |
+| Package        | Transport           | Notes                                                                                                                          |
+|----------------|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| `pkg/channel/` | In-process channels | `Bus[T]` broker, backpressure by blocking, no codec needed                                                                     |
+| `pkg/nats/`    | NATS core           | Wraps `*nats.Conn`, publisher takes `goencode.Encoder[T, []byte]`, subscriber takes `goencode.Decoder[T, []byte]`, no ack/nack |
+| `pkg/http/`    | HTTP POST           | Publisher POSTs to `{baseURL}/{subject}`, Subscriber exposes `http.ServeMux` (does not own listener)                           |
+| `bridge/`      | goflow stream       | Own `go.mod`, isolates goflow dependency from root module                                                                      |
 
-Transports use `goencode.Codec[T]` from `github.com/foomo/goencode` for serialization. Codecs are stateless and safe for concurrent use.
+Network transports take `goencode.Encoder[T, []byte]` for publishers and `goencode.Decoder[T, []byte]` for subscribers.
+Both are function types from `github.com/foomo/goencode`, composable via `PipeEncoder`/`PipeDecoder`. A
+`goencode.Codec[T, []byte]` provides both as `.Encode`/`.Decode` method values. Requester/Responder still take full
+`Codec` params.
 
 ### Pipeline Operators (`pipe/` subpackage)
 
@@ -76,9 +84,11 @@ Handler factories that compose `Handler[T]` and `Publisher[T]`:
 - `pipe.New[T]` — forward messages through optional filter to a publisher
 - `pipe.NewMap[T, U]` — transform T→U before publishing
 - `pipe.NewFlatMap[T, U]` — expand T into []U, publish each individually
-- Options: `WithFilter`, `WithDeadLetter`, `WithMiddleware` (and `WithMapFilter`, `WithMapDeadLetter`, `WithMapMiddleware` for map variants)
+- Options: `WithFilter`, `WithDeadLetter`, `WithMiddleware` (and `WithMapFilter`, `WithMapDeadLetter`,
+  `WithMapMiddleware` for map variants)
 - Error semantics: filter rejection returns nil (ack), map/publish errors return to transport
-- OTel: span events (`pipe.dead_letter`, `pipe.publish_error`, `pipe.map_error`) and attributes (`pipe.type`, `pipe.filtered`, `pipe.items_published`) on existing transport span
+- OTel: span events (`pipe.dead_letter`, `pipe.publish_error`, `pipe.map_error`) and attributes (`pipe.type`,
+  `pipe.filtered`, `pipe.items_published`) on existing transport span
 
 ### Adapters
 
@@ -87,11 +97,13 @@ Handler factories that compose `Handler[T]` and `Publisher[T]`:
 - `Bind[T]` — fixed-subject publisher wrapper
 - `RetryPublisher[T]` — publish retry with backoff
 
-Stream-processing operators (fan-out, fan-in, round-robin, filter, map, distinct, skip, take, throttle, peek) are provided by `github.com/foomo/goflow` — use `bridge.ToStream` to bridge.
+Stream-processing operators (fan-out, fan-in, round-robin, filter, map, distinct, skip, take, throttle, peek) are
+provided by `github.com/foomo/goflow` — use `bridge.ToStream` to bridge.
 
 ### Middleware (`middleware/` subpackage)
 
-`Middleware[T]` type, `PublisherMiddleware[T]` type, and `Chain[T]` live in the root package. Messaging-specific middleware lives in `github.com/foomo/goflux/middleware`:
+`Middleware[T]` type, `PublisherMiddleware[T]` type, and `Chain[T]` live in the root package. Messaging-specific
+middleware lives in `github.com/foomo/goflux/middleware`:
 
 - `middleware.AutoAck[T]()` — ack on nil error, nak on non-nil
 - `middleware.RetryAck[T](policy)` — retry-policy-aware ack (nak/nak-with-delay/term based on error)
@@ -100,7 +112,8 @@ Stream-processing operators (fan-out, fan-in, round-robin, filter, map, distinct
 
 ### Telemetry
 
-OTel is built into transports, not added as middleware. Package-level singleton initialized via `sync.Once` against OTel globals.
+OTel is built into transports, not added as middleware. Package-level singleton initialized via `sync.Once` against OTel
+globals.
 
 - Transports call `RecordPublish()` / `RecordProcess()` directly
 - All metrics follow `messaging.*` semconv naming
@@ -111,12 +124,15 @@ OTel is built into transports, not added as middleware. Package-level singleton 
 
 - NATS and HTTP transports automatically propagate OTel trace context via transport headers (W3C Trace Context)
 - `InjectContext(ctx, carrier)` / `ExtractContext(ctx, carrier)` — thin wrappers around the global `TextMapPropagator`
-- `WithMessageID(ctx, id)` / `MessageID(ctx)` — opt-in business-level message ID, propagated via `X-Message-ID` header and attached as `messaging.message.id` span attribute
+- `WithMessageID(ctx, id)` / `MessageID(ctx)` — opt-in business-level message ID, propagated via `X-Message-ID` header
+  and attached as `messaging.message.id` span attribute
 - New transports crossing process boundaries should call `InjectContext` on publish and `ExtractContext` on subscribe
 
 ### Goroutine Management
 
-Uses `github.com/foomo/gofuncy` for goroutine lifecycle management with built-in OTel observability. Production code uses `gofuncy.Go` (fire-and-forget) and `gofuncy.All` (concurrent iteration). Tests use `gofuncy.Start`/`gofuncy.StartWithReady` for synchronization. All calls should include `gofuncy.WithName()` for tracing labels.
+Uses `github.com/foomo/gofuncy` for goroutine lifecycle management with built-in OTel observability. Production code
+uses `gofuncy.Go` (fire-and-forget) and `gofuncy.All` (concurrent iteration). Tests use `gofuncy.Start`/
+`gofuncy.StartWithReady` for synchronization. All calls should include `gofuncy.WithName()` for tracing labels.
 
 ## Key Design Rules
 

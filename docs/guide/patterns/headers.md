@@ -42,7 +42,7 @@ func main() {
 	defer conn.Drain()
 
 	codec := json.NewCodec[OrderEvent]()
-	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec)
+	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec.Encode)
 
 	ctx := goflux.WithHeader(context.Background(), goflux.Header{
 		"X-Tenant-ID": {"acme"},

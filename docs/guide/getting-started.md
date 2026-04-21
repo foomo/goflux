@@ -120,10 +120,10 @@ func main() {
 	}
 	defer conn.Drain()
 
-	// Create publisher and subscriber with a JSON codec.
+	// Create publisher and subscriber with a JSON encoder/decoder.
 	codec := jsoncodec.New[OrderEvent]()
-	pub := gofluxnats.NewPublisher(conn, codec)
-	sub := gofluxnats.NewSubscriber(conn, codec)
+	pub := gofluxnats.NewPublisher(conn, codec.Encode)
+	sub := gofluxnats.NewSubscriber(conn, codec.Decode)
 
 	// Same handler as before -- no transport-specific code.
 	handler := func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
@@ -139,7 +139,7 @@ func main() {
 }
 ```
 
-Network transports require a `goencode.Codec[T]` for serialization. Codecs are stateless and safe for concurrent use. The `goencode` library provides codecs for JSON, Protocol Buffers, and other formats.
+Network transports take an `goencode.Encoder[T, []byte]` for publishers and a `goencode.Decoder[T, []byte]` for subscribers. A `goencode.Codec[T, []byte]` provides both as `.Encode` and `.Decode` method values. Encoders and decoders are function types, composable via `goencode.PipeEncoder` / `goencode.PipeDecoder`. The `goencode` library provides codecs for JSON, Protocol Buffers, and other formats.
 
 ## Other Transports
 
