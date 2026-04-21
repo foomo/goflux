@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/foomo/goflux"
@@ -10,26 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestForwardMessageID(t *testing.T) {
-	var capturedCtx context.Context
-
+func ExampleForwardMessageID() {
 	inner := func(ctx context.Context, msg goflux.Message[string]) error {
-		capturedCtx = ctx
+		fmt.Println(goflux.MessageID(ctx))
 
 		return nil
 	}
 
 	handler := middleware.ForwardMessageID[string]()(inner)
 
-	// Set message ID in incoming context.
 	ctx := goflux.WithMessageID(context.Background(), "msg-123")
-	msg := goflux.NewMessage("test", "payload")
 
-	err := handler(ctx, msg)
-	require.NoError(t, err)
-
-	// Message ID should be forwarded through context.
-	assert.Equal(t, "msg-123", goflux.MessageID(capturedCtx))
+	_ = handler(ctx, goflux.NewMessage("test", "payload"))
+	// Output: msg-123
 }
 
 func TestForwardMessageID_noID(t *testing.T) {
@@ -46,6 +40,5 @@ func TestForwardMessageID_noID(t *testing.T) {
 	err := handler(context.Background(), goflux.NewMessage("test", "payload"))
 	require.NoError(t, err)
 
-	// No message ID set — should remain empty.
 	assert.Empty(t, goflux.MessageID(capturedCtx))
 }

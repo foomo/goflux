@@ -1,24 +1,23 @@
 package bridge_test
 
 import (
-	"testing"
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/foomo/goflow"
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/bridge"
 	"github.com/foomo/goflux/transport/channel"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestFromStream(t *testing.T) {
-	ctx := t.Context()
+func ExampleFromStream() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub, _ := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := goflux.ToChan[Event](ctx, dstSub, "events", 4)
 
@@ -30,12 +29,11 @@ func TestFromStream(t *testing.T) {
 	}
 	stream := goflow.Of(ctx, msgs...)
 
-	err = bridge.FromStream(stream, dstPub)
-	require.NoError(t, err)
+	_ = bridge.FromStream(stream, dstPub)
 
-	msg1 := <-dstCh
-	msg2 := <-dstCh
-
-	assert.Equal(t, "alpha", msg1.Payload.Name)
-	assert.Equal(t, "bravo", msg2.Payload.Name)
+	fmt.Println((<-dstCh).Payload.Name)
+	fmt.Println((<-dstCh).Payload.Name)
+	// Output:
+	// alpha
+	// bravo
 }

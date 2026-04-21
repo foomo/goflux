@@ -1,13 +1,12 @@
 package bridge_test
 
 import (
-	"testing"
+	"context"
+	"fmt"
 	"time"
 
 	"github.com/foomo/goflux/bridge"
 	"github.com/foomo/goflux/transport/channel"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type Event struct {
@@ -15,14 +14,14 @@ type Event struct {
 	Name string `json:"name"`
 }
 
-func TestToStream(t *testing.T) {
-	ctx := t.Context()
+func ExampleToStream() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	bus := channel.NewBus[Event]()
 	pub := channel.NewPublisher(bus)
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	require.NoError(t, err)
+	sub, _ := channel.NewSubscriber(bus, 1)
 
 	stream := bridge.ToStream[Event](ctx, sub, "events", 4)
 
@@ -34,9 +33,10 @@ func TestToStream(t *testing.T) {
 	}()
 
 	ch := stream.Chan()
-	msg1 := <-ch
-	msg2 := <-ch
 
-	assert.Equal(t, "alpha", msg1.Payload.Name)
-	assert.Equal(t, "bravo", msg2.Payload.Name)
+	fmt.Println((<-ch).Payload.Name)
+	fmt.Println((<-ch).Payload.Name)
+	// Output:
+	// alpha
+	// bravo
 }

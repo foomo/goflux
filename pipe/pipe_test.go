@@ -521,3 +521,63 @@ func ExampleNewMap() {
 	<-ctx.Done()
 	// Output: events {hello}
 }
+
+func ExampleNewFlatMap() {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	srcBus := channel.NewBus[Order]()
+	srcPub := channel.NewPublisher(srcBus)
+
+	srcSub, err := channel.NewSubscriber(srcBus, 1)
+	if err != nil {
+		panic(err)
+	}
+
+	dstBus := channel.NewBus[LineItem]()
+	dstPub := channel.NewPublisher(dstBus)
+
+	dstSub, err := channel.NewSubscriber(dstBus, 1)
+	if err != nil {
+		panic(err)
+	}
+
+	flatMapFn := func(_ context.Context, msg goflux.Message[Order]) ([]LineItem, error) {
+		items := make([]LineItem, len(msg.Payload.Items))
+		for i, item := range msg.Payload.Items {
+			items[i] = LineItem{OrderID: msg.Payload.ID, Item: item}
+		}
+
+		return items, nil
+	}
+
+	var count int
+
+	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
+		ready()
+
+		return dstSub.Subscribe(ctx, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
+			fmt.Println(msg.Payload.OrderID, msg.Payload.Item)
+			count++
+			if count == 2 {
+				cancel()
+			}
+
+			return nil
+		})
+	}, gofuncy.WithName("dst-subscriber"))
+
+	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
+		ready()
+
+		return srcSub.Subscribe(ctx, "orders", pipe.NewFlatMap[Order, LineItem](dstPub, flatMapFn))
+	}, gofuncy.WithName("pipe-flatmap"))
+
+	if err := srcPub.Publish(ctx, "orders", Order{ID: "o1", Items: []string{"widget", "gadget"}}); err != nil {
+		panic(err)
+	}
+
+	<-ctx.Done()
+	// Output:
+	// o1 widget
+	// o1 gadget
+}

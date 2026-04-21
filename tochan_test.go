@@ -2,6 +2,7 @@ package goflux_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,28 +12,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToChan(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
+func ExampleToChan() {
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	bus := channel.NewBus[string]()
 	pub := channel.NewPublisher(bus)
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	require.NoError(t, err)
+	sub, _ := channel.NewSubscriber(bus, 1)
 
 	ch := goflux.ToChan[string](ctx, sub, "test", 4)
 
 	time.Sleep(10 * time.Millisecond)
 
-	require.NoError(t, pub.Publish(ctx, "test", "alpha"))
-	require.NoError(t, pub.Publish(ctx, "test", "bravo"))
+	_ = pub.Publish(ctx, "test", "alpha")
+	_ = pub.Publish(ctx, "test", "bravo")
 
-	msg1 := <-ch
-	msg2 := <-ch
-
-	assert.Equal(t, "alpha", msg1.Payload)
-	assert.Equal(t, "bravo", msg2.Payload)
+	fmt.Println((<-ch).Payload)
+	fmt.Println((<-ch).Payload)
+	// Output:
+	// alpha
+	// bravo
 }
 
 func TestToChan_closesOnCancel(t *testing.T) {
