@@ -72,7 +72,7 @@ func main() {
 
 ## NATS Core Example
 
-With NATS core, messages are sent over the network but still follow at-most-once semantics. A `goencode.Codec` handles serialization.
+With NATS core, messages are sent over the network but still follow at-most-once semantics. Publishers take a `goencode.Encoder`, subscribers take a `goencode.Decoder`.
 
 ```go
 package main
@@ -105,8 +105,8 @@ func main() {
 
 	codec := json.NewCodec[Event]()
 
-	pub := gofluxnats.NewPublisher[Event](conn, codec)
-	sub := gofluxnats.NewSubscriber[Event](conn, codec)
+	pub := gofluxnats.NewPublisher[Event](conn, codec.Encode)
+	sub := gofluxnats.NewSubscriber[Event](conn, codec.Decode)
 
 	go func() {
 		_ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {

@@ -18,7 +18,7 @@ func ExampleNewSubscriber() {
 	defer cancel()
 
 	done := make(chan struct{})
-	sub := fluxnats.NewSubscriber(conn, json.NewCodec[Event]())
+	sub := fluxnats.NewSubscriber(conn, json.NewCodec[Event]().Decode)
 
 	go func() {
 		defer close(done)

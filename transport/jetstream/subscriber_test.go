@@ -41,7 +41,7 @@ func ExampleNewSubscriber() {
 
 	var once sync.Once
 
-	sub := fluxjetstream.NewSubscriber(cons, json.NewCodec[Event]())
+	sub := fluxjetstream.NewSubscriber(cons, json.NewCodec[Event]().Decode)
 
 	gofuncy.Start(ctx, func(ctx context.Context) error {
 		return sub.Subscribe(ctx, "events.created", func(_ context.Context, msg goflux.Message[Event]) error {

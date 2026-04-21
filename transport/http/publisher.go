@@ -21,7 +21,7 @@ import (
 // Subject is appended to BaseURL as the path: POST {BaseURL}/{nats}
 type Publisher[T any] struct {
 	baseURL    string
-	serializer goencode.Codec[T, []byte]
+	encoder    goencode.Encoder[T, []byte]
 	httpClient *http.Client
 	tel        *goflux.Telemetry
 	// ContentType is sent as the Content-Type header. Defaults to
@@ -32,14 +32,14 @@ type Publisher[T any] struct {
 // NewPublisher creates an HTTP publisher.
 // baseURL is the target service root, e.g. "https://orders.internal".
 // An optional *http.Client may be provided; if nil the default client is used.
-func NewPublisher[T any](baseURL string, serializer goencode.Codec[T, []byte], client *http.Client, opts ...PublisherOption) *Publisher[T] {
+func NewPublisher[T any](baseURL string, encoder goencode.Encoder[T, []byte], client *http.Client, opts ...PublisherOption) *Publisher[T] {
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
 
 	cfg := applyPublisherOpts(opts)
 
-	return &Publisher[T]{baseURL: baseURL, serializer: serializer, httpClient: client, tel: cfg.tel}
+	return &Publisher[T]{baseURL: baseURL, encoder: encoder, httpClient: client, tel: cfg.tel}
 }
 
 // Publish encodes v and POSTs it to {baseURL}/{nats}.
@@ -51,7 +51,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 }
 
 func (p *Publisher[T]) post(ctx context.Context, subject string, v T) error {
-	b, err := p.serializer.Encode(v)
+	b, err := p.encoder(v)
 	if err != nil {
 		return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("http: %w", err))
 	}

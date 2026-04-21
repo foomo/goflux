@@ -35,7 +35,7 @@ func ExampleNewPublisher() {
 
 	defer func() { _ = sub.Unsubscribe() }()
 
-	pub := fluxnats.NewPublisher(conn, json.NewCodec[Event]())
+	pub := fluxnats.NewPublisher(conn, json.NewCodec[Event]().Encode)
 	if err := pub.Publish(context.Background(), "events", Event{ID: "1", Name: "foo"}); err != nil {
 		panic(err)
 	}

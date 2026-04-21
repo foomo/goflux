@@ -2,7 +2,7 @@
 
 Package `github.com/foomo/goflux/transport/nats`
 
-The NATS transport wraps a `*nats.Conn` for core NATS pub/sub and request-reply. It requires a `goencode.Codec[T]` for message serialization.
+The NATS transport wraps a `*nats.Conn` for core NATS pub/sub and request-reply. Publishers take a `goencode.Encoder[T, []byte]`, subscribers take a `goencode.Decoder[T, []byte]`.
 
 ## Interfaces
 
@@ -16,17 +16,17 @@ The NATS transport wraps a `*nats.Conn` for core NATS pub/sub and request-reply.
 ## Publisher
 
 ```go
-func NewPublisher[T any](conn *nats.Conn, codec goencode.Codec[T], opts ...Option) *Publisher[T]
+func NewPublisher[T any](conn *nats.Conn, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T]
 ```
 
-`Publish` encodes the value with the codec, injects OTel context and goflux headers into NATS message headers, and publishes to the subject.
+`Publish` encodes the value with the encoder, injects OTel context and goflux headers into NATS message headers, and publishes to the subject.
 
 `Close` calls `conn.Drain()`.
 
 ## Subscriber
 
 ```go
-func NewSubscriber[T any](conn *nats.Conn, codec goencode.Codec[T], opts ...Option) *Subscriber[T]
+func NewSubscriber[T any](conn *nats.Conn, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T]
 ```
 
 `Subscribe` registers a callback with the NATS connection and blocks until the context is cancelled, then unsubscribes. Decode failures are logged and the message is dropped.
@@ -111,8 +111,8 @@ func main() {
 
 	codec := json.NewCodec[Event]()
 
-	pub := gofluxnats.NewPublisher[Event](conn, codec)
-	sub := gofluxnats.NewSubscriber[Event](conn, codec)
+	pub := gofluxnats.NewPublisher[Event](conn, codec.Encode)
+	sub := gofluxnats.NewSubscriber[Event](conn, codec.Decode)
 
 	// Subscribe in a goroutine -- Subscribe blocks until ctx is cancelled.
 	go func() {

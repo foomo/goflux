@@ -16,7 +16,7 @@ The JetStream transport provides durable, acknowledged messaging on top of NATS 
 ## Publisher
 
 ```go
-func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T], opts ...Option) *Publisher[T]
+func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T]
 ```
 
 `Publish` encodes the value, injects OTel context and goflux headers into NATS message headers, and publishes to the JetStream stream. The JetStream server acknowledges persistence.
@@ -26,7 +26,7 @@ func NewPublisher[T any](js jetstream.JetStream, codec goencode.Codec[T], opts .
 ## Subscriber
 
 ```go
-func NewSubscriber[T any](consumer jetstream.Consumer, codec goencode.Codec[T], opts ...Option) *Subscriber[T]
+func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T]
 ```
 
 `Subscribe` starts a consumption loop using the JetStream consumer's `Consume()` method, which works for both push and pull consumers. It blocks until the context is cancelled, then stops the consume context. Decode failures cause the message to be terminated (`msg.Term()`).
@@ -124,13 +124,13 @@ func main() {
 	}
 
 	// Publish a message.
-	pub := gofluxjs.NewPublisher[Event](js, codec)
+	pub := gofluxjs.NewPublisher[Event](js, codec.Encode)
 	if err := pub.Publish(ctx, "events.created", Event{ID: "1", Name: "signup"}); err != nil {
 		log.Fatal(err)
 	}
 
 	// Subscribe with auto-ack (default).
-	sub := gofluxjs.NewSubscriber[Event](cons, codec)
+	sub := gofluxjs.NewSubscriber[Event](cons, codec.Decode)
 	go func() {
 		_ = sub.Subscribe(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
 			fmt.Printf("received: %s %s\n", msg.Payload.ID, msg.Payload.Name)
@@ -143,7 +143,7 @@ func main() {
 ## Manual Ack with NakWithDelay
 
 ```go
-sub := gofluxjs.NewSubscriber[Event](cons, codec, gofluxjs.WithManualAck())
+sub := gofluxjs.NewSubscriber[Event](cons, codec.Decode, gofluxjs.WithManualAck())
 
 go func() {
 	_ = sub.Subscribe(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
@@ -172,7 +172,7 @@ cons, _ := js.CreateOrUpdateConsumer(ctx, "EVENTS", jetstream.ConsumerConfig{
 })
 
 codec := json.NewCodec[Event]()
-sub := gofluxjs.NewSubscriber[Event](cons, codec, gofluxjs.WithManualAck())
+sub := gofluxjs.NewSubscriber[Event](cons, codec.Decode, gofluxjs.WithManualAck())
 
 // Use ToStream + goflow for bounded concurrency.
 stream := goflux.ToStream[Event](ctx, sub, "events.created", 16)

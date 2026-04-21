@@ -1,6 +1,6 @@
 # goflow Integration
 
-goflux is designed to work together with [goflow](https://github.com/foomo/goflow), a generic stream-processing library. goflux handles transports (NATS, JetStream, HTTP, channels) and messaging semantics (ack/nak, headers, codecs). goflow handles stream operators (filter, map, fan-out, fan-in, throttle, distinct, and more).
+goflux is designed to work together with [goflow](https://github.com/foomo/goflow), a generic stream-processing library. goflux handles transports (NATS, JetStream, HTTP, channels) and messaging semantics (ack/nak, headers, encoding/decoding). goflow handles stream operators (filter, map, fan-out, fan-in, throttle, distinct, and more).
 
 The two libraries connect via bridge functions:
 
@@ -50,7 +50,7 @@ func main() {
 
 	// HTTP subscriber (inbound webhooks).
 	codec := json.NewCodec[WebhookEvent]()
-	httpSub := gofluxhttp.NewSubscriber[WebhookEvent](codec)
+	httpSub := gofluxhttp.NewSubscriber[WebhookEvent](codec.Decode)
 
 	// NATS / JetStream publishers (outbound).
 	nc, err := nats.Connect(nats.DefaultURL)
@@ -66,8 +66,8 @@ func main() {
 		return
 	}
 
-	archivePub := gofluxjs.NewPublisher[WebhookEvent](js, codec)
-	notifyPub := gofluxjs.NewPublisher[WebhookEvent](js, codec)
+	archivePub := gofluxjs.NewPublisher[WebhookEvent](js, codec.Encode)
+	notifyPub := gofluxjs.NewPublisher[WebhookEvent](js, codec.Encode)
 
 	// ---------------------------------------------------------------
 	// 2. Bridge HTTP subscriber into a goflow stream
