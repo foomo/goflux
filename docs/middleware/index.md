@@ -64,6 +64,24 @@ withHeader := middleware.InjectHeader[Event]()(handler)
 // handler can now use goflux.HeaderFromContext(ctx)
 ```
 
+### ForwardMessageID
+
+```go
+func ForwardMessageID[T any]() Middleware[T]
+```
+
+Preserves the message ID from the incoming context through the handler chain. Use this with pipe's `WithMiddleware` to forward message IDs across pipe stages.
+
+Unlike `InjectMessageID` (which reads the ID from message headers set by transports), `ForwardMessageID` reads from context -- suitable for in-process handler chains where the ID is already in context.
+
+```go
+handler := pipe.New[Event](pub,
+    pipe.WithMiddleware(
+        middleware.ForwardMessageID[Event](),
+    ),
+)
+```
+
 ## Composing with Chain
 
 Use `Chain` to stack multiple middleware into a single wrapper:

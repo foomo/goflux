@@ -18,13 +18,13 @@ Quick reference for all goflux types, interfaces, and operators.
 | Fire and Forget | `Publisher` + `Subscriber`, acker=nil | channel, nats |
 | At-Least-Once (push) | `Publisher` + `Subscriber`, auto-ack | jetstream |
 | At-Least-Once (pull) | `Publisher` + `Subscriber` + `WithManualAck`, middleware ack | jetstream |
-| Stream Processing | `ToStream` + goflow operators | any |
+| Stream Processing | `bridge.ToStream` + goflow operators | any |
 | Manual Ack/Nak/Term | `Subscriber` + `WithManualAck()` | jetstream |
 | Exactly-Once | `Publisher` with `Nats-Msg-Id` header | jetstream |
 | Request-Reply | `Requester` + `Responder` | nats, http |
 | Queue Groups | `Subscriber` + `WithQueueGroup` | nats |
-| Fan-out | `ToStream` + goflow `Tee` / `FanOut` | any |
-| Fan-in | `ToStream` + goflow `FanIn` | any |
+| Fan-out | `bridge.ToStream` + goflow `Tee` / `FanOut` | any |
+| Fan-in | `bridge.ToStream` + goflow `FanIn` | any |
 
 ## Core Types
 
@@ -132,9 +132,10 @@ type Terminator interface {
 | `BoundPublisher[T]` | Wraps `Publisher[T]` with a fixed subject |
 | `Middleware[T]` | `func(Handler[T]) Handler[T]` |
 | `PublisherMiddleware[T]` | `func(Publisher[T]) Publisher[T]` |
-| `Filter[T]` | `func(ctx, msg Message[T]) (bool, error)` |
-| `MapFunc[T, U]` | `func(ctx, msg Message[T]) (Message[U], error)` |
-| `DeadLetterFunc[T]` | `func(ctx, msg Message[T], err error)` |
+| `pipe.Filter[T]` | `func(ctx, msg Message[T]) bool` |
+| `pipe.MapFunc[T, U]` | `func(ctx, msg Message[T]) (U, error)` |
+| `pipe.FlatMapFunc[T, U]` | `func(ctx, msg Message[T]) ([]U, error)` |
+| `pipe.DeadLetterFunc[T]` | `func(ctx, msg Message[T], err error)` |
 
 ### Context Helpers
 
@@ -157,10 +158,11 @@ Built-in implementations live in the `github.com/foomo/goflux/middleware` packag
 | `RetryAck[T](policy)` | `middleware` | `RetryPolicy -> Middleware[T]` | Classify errors into ack/nak/term via policy |
 | `InjectMessageID[T]()` | `middleware` | `-> Middleware[T]` | Header message ID → context |
 | `InjectHeader[T]()` | `middleware` | `-> Middleware[T]` | Message header → context |
+| `ForwardMessageID[T]()` | `middleware` | `-> Middleware[T]` | Forward message ID from context through pipe stages |
 | `Chain[T](mws...)` | `goflux` | `...Middleware[T] -> Middleware[T]` | Compose left-to-right |
 
 ::: tip Stream Processing Operators
-For concurrency limiting, deduplication, throttling, skip/take, and peek, use [goflow](https://github.com/foomo/goflow) operators via `ToStream`.
+For concurrency limiting, deduplication, throttling, skip/take, and peek, use [goflow](https://github.com/foomo/goflow) operators via `bridge.ToStream`.
 :::
 
 See [Middleware](/middleware/) for details and examples.
@@ -169,20 +171,25 @@ See [Middleware](/middleware/) for details and examples.
 
 | Operator | Description |
 |----------|-------------|
-| `Pipe[T](pub, opts...)` | Forward messages to a publisher |
-| `PipeMap[T, U](pub, mapFn, opts...)` | Transform and forward |
-| `Bind[T](pub, subject)` | Fix subject on a publisher |
+| `pipe.New[T](pub, opts...)` | Forward messages to a publisher |
+| `pipe.NewMap[T, U](pub, mapFn, opts...)` | Transform and forward |
+| `pipe.NewFlatMap[T, U](pub, fn, opts...)` | Expand and forward (1→N) |
+| `BindPublisher[T](pub, subject)` | Fix subject on a publisher |
 | `ToChan[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `<-chan Message[T]` |
-| `ToStream[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `goflow.Stream[Message[T]]` |
-| `FromStream[T](stream, pub, subject)` | Consume goflow stream and publish each message |
+| `bridge.ToStream[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `goflow.Stream[Message[T]]` |
+| `bridge.FromStream[T](stream, pub)` | Consume goflow stream and publish each message |
 | `RetryPublisher[T](pub, maxAttempts, backoff)` | Wrap publisher with retry logic |
 
 ### Pipe Options
 
 | Option | Description |
 |--------|-------------|
-| `WithFilter[T](f)` | Drop messages where filter returns false |
-| `WithDeadLetter[T](fn)` | Handle failed messages |
+| `pipe.WithFilter[T](f)` | Skip messages where filter returns false |
+| `pipe.WithDeadLetter[T](fn)` | Observe failed messages (does not swallow error) |
+| `pipe.WithMiddleware[T](mw...)` | Wrap pipe handler with middleware |
+| `pipe.WithMapFilter[T, U](f)` | Filter for map/flatmap pipes |
+| `pipe.WithMapDeadLetter[T, U](fn)` | Dead-letter observer for map/flatmap pipes |
+| `pipe.WithMapMiddleware[T, U](mw...)` | Middleware for map/flatmap pipes |
 
 See [Pipeline Operators](/pipeline/) for details and examples.
 
