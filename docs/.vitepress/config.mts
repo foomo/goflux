@@ -50,6 +50,7 @@ export default defineConfig({
 				items: [
 					{ text: 'Channel', link: '/transports/channel' },
 					{ text: 'NATS', link: '/transports/nats' },
+					{ text: 'NATS Subjects', link: '/transports/nats-subjects' },
 					{ text: 'JetStream', link: '/transports/jetstream' },
 					{ text: 'HTTP', link: '/transports/http' },
 				],
