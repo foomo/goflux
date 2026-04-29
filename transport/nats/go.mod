@@ -7,7 +7,7 @@ replace github.com/foomo/goflux => ../../
 require (
 	github.com/foomo/goencode v0.2.0
 	github.com/foomo/goflux v0.2.2
-	github.com/nats-io/nats-server/v2 v2.12.7
+	github.com/nats-io/nats-server/v2 v2.12.8
 	github.com/nats-io/nats.go v1.51.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
