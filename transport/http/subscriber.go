@@ -78,6 +78,7 @@ func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...Subscribe
 		mux:         http.NewServeMux(),
 		decoder:     decoder,
 		tel:         cfg.tel,
+		basePath:    cfg.basePath,
 		maxBodySize: cfg.maxBodySize,
 	}
 }
