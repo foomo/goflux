@@ -1,12 +1,13 @@
 package nats
 
-// Event represents the terminal event segment of a nats.
+// Event is the terminal segment of the builder chain. It always has a parent
+// [Entity].
 type Event struct {
 	entity string
 	name   string
 }
 
-// String returns the complete nats string.
+// String returns the complete NATS subject.
 func (ev Event) String() string {
 	return ev.entity + "." + ev.name
 }
