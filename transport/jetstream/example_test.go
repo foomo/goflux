@@ -2,6 +2,7 @@ package jetstream_test
 
 import (
 	"fmt"
+	"time"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
@@ -31,7 +32,7 @@ func newServer() (*natsserver.Server, *nats.Conn) {
 		panic("nats server not ready")
 	}
 
-	conn, err := nats.Connect(srv.ClientURL())
+	conn, err := nats.Connect(srv.ClientURL(), nats.Timeout(10*time.Second))
 	if err != nil {
 		srv.Shutdown()
 		panic(fmt.Sprintf("nats connect: %s", err))
