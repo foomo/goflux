@@ -6,7 +6,7 @@ replace github.com/foomo/goflux => ../
 
 require (
 	github.com/foomo/goflow v0.2.2
-	github.com/foomo/goflux v0.0.0
+	github.com/foomo/goflux v0.4.3
 )
 
 require (
