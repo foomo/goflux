@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/foomo/goflux/semconv"
+	"github.com/foomo/goflux/semconv/gofluxconv"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -36,7 +38,7 @@ type Telemetry struct {
 	processDuration  semconvmsg.ProcessDuration         // goflux.process.duration
 
 	// goflux-specific metrics
-	ackOutcome metric.Int64Counter // goflux.processor.ack.outcome
+	ackOutcome gofluxconv.AckOutcome // goflux.processor.ack.outcome
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +99,7 @@ func NewNoopTelemetry() *Telemetry {
 	pubDur, _ := semconvmsg.NewClientOperationDuration(m)
 	procDur, _ := semconvmsg.NewProcessDuration(m)
 
-	ackOutcome, _ := m.Int64Counter("goflux.processor.ack.outcome")
+	ackOutcome, _ := gofluxconv.NewAckOutcome(m)
 
 	return &Telemetry{
 		tracer:           tracenoop.NewTracerProvider().Tracer(instrName),
@@ -153,9 +155,7 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 		return nil, fmt.Errorf("messaging telemetry: process duration: %w", err)
 	}
 
-	t.ackOutcome, err = m.Int64Counter("goflux.processor.ack.outcome",
-		metric.WithDescription("Number of message acknowledgment outcomes by action"),
-	)
+	t.ackOutcome, err = gofluxconv.NewAckOutcome(m)
 	if err != nil {
 		return nil, fmt.Errorf("messaging telemetry: ack outcome: %w", err)
 	}
@@ -173,10 +173,10 @@ func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system se
 		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, attribute.String("goflux.message.id", id))
+		attrs = append(attrs, semconv.MessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, subject+" publish",
+	ctx, span := t.tracer.Start(ctx, "goflux.publish",
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(attrs...),
 	)
@@ -232,7 +232,7 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, attribute.String("goflux.message.id", id))
+		attrs = append(attrs, semconv.MessageID(id))
 	}
 
 	startOpts := []trace.SpanStartOption{
@@ -243,7 +243,7 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		startOpts = append(startOpts, trace.WithLinks(trace.Link{SpanContext: cfg.linkedSpanCtx}))
 	}
 
-	ctx, span := t.tracer.Start(ctx, subject+" process", startOpts...)
+	ctx, span := t.tracer.Start(ctx, "goflux.process", startOpts...)
 	defer span.End()
 
 	start := time.Now()
@@ -275,10 +275,10 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 		attribute.Int("messaging.batch.message_count", count),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, attribute.String("goflux.message.id", id))
+		attrs = append(attrs, semconv.MessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, subject+" fetch",
+	ctx, span := t.tracer.Start(ctx, "goflux.fetch",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(attrs...),
 	)
@@ -312,10 +312,10 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, attribute.String("goflux.message.id", id))
+		attrs = append(attrs, semconv.MessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, subject+" request",
+	ctx, span := t.tracer.Start(ctx, "goflux.request",
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attrs...),
 	)
@@ -346,28 +346,15 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 // RegisterLag registers the goflux.consumer.lag observable gauge.
 // Uses the meter provider that was passed to [NewTelemetry].
 func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int64ObservableGauge, error) {
-	return t.mp.Meter(instrName).Int64ObservableGauge(
-		"goflux.consumer.lag",
-		metric.WithDescription("Number of messages waiting in the subscriber buffer"),
-		metric.WithInt64Callback(func(_ context.Context, obs metric.Int64Observer) error {
-			obs.Observe(lagFn(),
-				metric.WithAttributes(attribute.String("goflux.destination.name", subject)),
-			)
+	lag, err := gofluxconv.NewConsumerLag(t.mp.Meter(instrName), subject, lagFn)
 
-			return nil
-		}),
-	)
+	return lag.Inst(), err
 }
 
 // RecordAckOutcome records an acknowledgment outcome (ack, nak, nak_with_delay,
 // term) with an optional error label when the ack operation itself fails.
 func (t *Telemetry) RecordAckOutcome(ctx context.Context, action, subject string, err error) {
-	attrs := metric.WithAttributes(
-		attribute.String("goflux.ack.action", action),
-		attribute.String("goflux.destination.name", subject),
-		attribute.Bool("goflux.ack.error", err != nil),
-	)
-	t.ackOutcome.Add(ctx, 1, attrs)
+	t.ackOutcome.Add(ctx, 1, action, subject, err != nil)
 }
 
 // ---------------------------------------------------------------------------

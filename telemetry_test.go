@@ -45,7 +45,7 @@ func TestRecordPublish_SpanAndMetrics(t *testing.T) {
 	ctx := context.Background()
 	ctx = goflux.WithMessageID(ctx, "msg-123")
 
-	err := tel.RecordPublish(ctx, "orders.created", semconvmsg.SystemAttr("test"), func(ctx context.Context) error {
+	err := tel.RecordPublish(ctx, "orders.created", "test", func(ctx context.Context) error {
 		return nil
 	})
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestRecordPublish_SpanAndMetrics(t *testing.T) {
 	// Verify span
 	spans := spanExporter.GetSpans()
 	require.Len(t, spans, 1)
-	assert.Equal(t, "orders.created publish", spans[0].Name)
+	assert.Equal(t, "goflux.publish", spans[0].Name)
 	assert.Equal(t, trace.SpanKindProducer, spans[0].SpanKind)
 
 	// Verify span has message ID attribute
@@ -106,14 +106,14 @@ func TestRecordProcess_SpanKindConsumer(t *testing.T) {
 	tel, spanExporter, metricReader := setupTelemetry(t)
 	ctx := context.Background()
 
-	err := tel.RecordProcess(ctx, "orders.created", semconvmsg.SystemAttr("test"), func(ctx context.Context) error {
+	err := tel.RecordProcess(ctx, "orders.created", "test", func(ctx context.Context) error {
 		return nil
 	})
 	require.NoError(t, err)
 
 	spans := spanExporter.GetSpans()
 	require.Len(t, spans, 1)
-	assert.Equal(t, "orders.created process", spans[0].Name)
+	assert.Equal(t, "goflux.process", spans[0].Name)
 	assert.Equal(t, trace.SpanKindConsumer, spans[0].SpanKind)
 
 	// Verify consumed messages metric
