@@ -38,7 +38,7 @@ go.work:
 
 .PHONY: check
 ## Run lint & tests
-check: tidy generate lint.fix test audit
+check: tidy generate lint.fix test.race audit
 
 .PHONY: lint
 ## Run linter
@@ -62,22 +62,22 @@ generate:
 ## Run tests
 test:
 	@echo "〉go test"
-	@GO_TEST_TAGS=-skip go test -tags=safe -shuffle=on -coverprofile=coverage.out work
+	@GO_TEST_TAGS=-skip go test -v -tags=safe -shuffle=on -coverprofile=coverage.out work
 
 .PHONY: test.race
 ## Run tests with -race
 test.race:
-	@GO_TEST_TAGS=-skip go test -tags=safe -shuffle=on -coverprofile=coverage.out -race work
+	@GO_TEST_TAGS=-skip go test -v -tags=safe -shuffle=on -coverprofile=coverage.out -race work
 
 .PHONY: test.update
 ## Run tests with -update
 test.update:
-	@GO_TEST_TAGS=-skip go test -tags=safe -shuffle=on -coverprofile=coverage.out -update work
+	@GO_TEST_TAGS=-skip go test -v -tags=safe -shuffle=on -coverprofile=coverage.out -update work
 
 .PHONY: test.bench
 ## Run tests with -bench
 test.bench:
-	@GO_TEST_TAGS=-skip go test -tags=safe -bench=. -benchmem work
+	@GO_TEST_TAGS=-skip go test -v -tags=safe -bench=. -benchmem work
 
 ### Security
 
@@ -95,18 +95,18 @@ tidy:
 	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && go mod tidy) &&) true
 	@go work use -r . && go work sync
 
+
 .PHONY: outdated
 ## Show outdated direct dependencies
 outdated:
 	@echo "〉go mod outdated"
-	@go list -u -m -json all | go-mod-outdated -update -direct
+	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade --list) &&) true
 
 .PHONY: upgrade
 ## Show outdated direct dependencies
 upgrade:
 	@echo "〉go mod upgrade"
-	@rm go.work go.work.sum
-	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && go list -u -m -f '{{if and (not .Indirect) .Update}}{{.Path}}{{end}}' all | xargs -n1 -I{} go get {}@latest) &&) true
+	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade) &&) true
 	@$(MAKE) tidy
 
 ### Release

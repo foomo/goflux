@@ -1,6 +1,6 @@
-[![Build Status](https://github.com/foomo/goflux/actions/workflows/test.yml/badge.svg?branch=main&event=push)](https://github.com/foomo/goflux/actions/workflows/test.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/foomo/goflux)](https://goreportcard.com/report/github.com/foomo/goflux)
-[![GoDoc](https://godoc.org/github.com/foomo/goflux?status.svg)](https://godoc.org/github.com/foomo/goflux)
+[![GoDoc](https://img.shields.io/badge/GoDoc-✓-informational.svg?style=flat-square&logo=go)](https://godoc.org/github.com/foomo/goflux)
+[![Coverage](https://img.shields.io/codecov/c/github/foomo/goflux?style=flat-square&logo=github)](https://app.codecov.io/gh/foomo/goflux)
+[![GitHub Stars](https://img.shields.io/github/stars/foomo/goflux.svg?style=flat-square&logo=github)](https://github.com/foomo/goflux)
 
 <p align="center">
   <img alt="goflux" src="docs/public/logo.png" width="400" height="400"/>
@@ -14,15 +14,15 @@ Write business logic against core interfaces. Swap transports without touching h
 
 ## Architecture
 
-| Layer | What it provides |
-|-------|-----------------|
-| **Core Interfaces** | `Publisher[T]`, `Subscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
-| **Transports** | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces |
-| **Middleware** | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID` |
+| Layer                  | What it provides                                                                                                                  |
+|------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| **Core Interfaces**    | `Publisher[T]`, `Subscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]`                       |
+| **Transports**         | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces                                                 |
+| **Middleware**         | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`                                             |
 | **Pipeline Operators** | `pipe.New`, `pipe.NewMap`, `pipe.NewFlatMap`, `ToChan`, `bridge.ToStream`, `bridge.FromStream`, `BindPublisher`, `RetryPublisher` |
-| **Stream Processing** | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow) |
-| **Lifecycle** | `Group` — coordinated startup, fail-fast shutdown for multiple handlers |
-| **Telemetry** | OpenTelemetry tracing and metrics built into every transport |
+| **Stream Processing**  | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow)                          |
+| **Lifecycle**          | `Group` — coordinated startup, fail-fast shutdown for multiple handlers                                                           |
+| **Telemetry**          | OpenTelemetry tracing and metrics built into every transport                                                                      |
 
 ## Supported Patterns
 
@@ -31,17 +31,18 @@ Write business logic against core interfaces. Swap transports without touching h
 - **Pull Consumer** — JetStream pull consumers via `Subscriber[T]` with middleware composition (JetStream)
 - **Request-Reply** — typed request/response (NATS, HTTP)
 - **Queue Groups** — competing consumers (NATS)
-- **Stream Processing** — bridge to [goflow](https://github.com/foomo/goflow) via `bridge.ToStream`/`bridge.FromStream` for bounded concurrency, filtering, dedup, fan-out/fan-in, and more
+- **Stream Processing** — bridge to [goflow](https://github.com/foomo/goflow) via `bridge.ToStream`/`bridge.FromStream`
+  for bounded concurrency, filtering, dedup, fan-out/fan-in, and more
 - **Fan-Out / Fan-In** — broadcast, merge, round-robin via goflow stream operators
 
 ## Transport Feature Matrix
 
-| Interface | Channel | NATS | JetStream | HTTP |
-|-----------|:-------:|:----:|:---------:|:----:|
-| `Publisher[T]` | yes | yes | yes | yes |
-| `Subscriber[T]` | yes | yes | yes | yes |
-| `Requester[Req, Resp]` | - | yes | - | yes |
-| `Responder[Req, Resp]` | - | yes | - | yes |
+| Interface              | Channel | NATS | JetStream | HTTP |
+|------------------------|:-------:|:----:|:---------:|:----:|
+| `Publisher[T]`         |   yes   | yes  |    yes    | yes  |
+| `Subscriber[T]`        |   yes   | yes  |    yes    | yes  |
+| `Requester[Req, Resp]` |    -    | yes  |     -     | yes  |
+| `Responder[Req, Resp]` |    -    | yes  |     -     | yes  |
 
 ## Installation
 
@@ -81,7 +82,8 @@ func main() {
 }
 ```
 
-Swap to NATS by changing the import and constructor — the handler stays the same. See the [Getting Started](https://foomo.github.io/goflux/guide/getting-started) guide.
+Swap to NATS by changing the import and constructor — the handler stays the same. See
+the [Getting Started](https://foomo.github.io/goflux/guide/getting-started) guide.
 
 ## Documentation
 
