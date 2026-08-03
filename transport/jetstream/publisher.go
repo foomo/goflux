@@ -9,7 +9,7 @@ import (
 	"github.com/foomo/goflux"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -33,8 +33,8 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 		}
 
 		trace.SpanFromContext(ctx).SetAttributes(
-			attribute.Int("messaging.message.body.size", len(b)),
-			attribute.String("messaging.operation.type", "publish"),
+			semconv.MessagingMessageBodySize(len(b)),
+			semconv.MessagingOperationTypeSend,
 		)
 
 		msg := nats.NewMsg(subject)

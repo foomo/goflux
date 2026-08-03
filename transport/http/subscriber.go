@@ -8,8 +8,8 @@ import (
 
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -143,8 +143,8 @@ func (s *Subscriber[T]) Handler(subject string, handler goflux.Handler[T]) http.
 
 		err = s.tel.RecordProcess(msgCtx, subject, system, func(hCtx context.Context) error {
 			trace.SpanFromContext(hCtx).SetAttributes(
-				attribute.Int("messaging.message.body.size", len(body)),
-				attribute.String("messaging.operation.type", "process"),
+				semconv.MessagingMessageBodySize(len(body)),
+				semconv.MessagingOperationTypeProcess,
 			)
 
 			return handler(hCtx, msg)

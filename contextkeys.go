@@ -15,7 +15,7 @@ const MessageIDHeader = "X-Message-ID"
 
 // WithMessageID returns a copy of ctx with the given message ID attached.
 // The ID is purely opt-in: if set, transports propagate it via headers and
-// RecordPublish / RecordProcess attach it as the goflux.message.id span
+// RecordPublish / RecordProcess attach it as the messaging.message.id span
 // attribute.
 func WithMessageID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, ctxKeyMessageID, id)

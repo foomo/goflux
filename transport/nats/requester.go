@@ -7,8 +7,9 @@ import (
 
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
+	gsemconv "github.com/foomo/goflux/semconv"
 	"github.com/nats-io/nats.go"
-	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -42,14 +43,16 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 	var result Resp
 
 	err := r.tel.RecordRequest(ctx, subject, system, func(ctx context.Context) error {
+		sp := trace.SpanFromContext(ctx)
+
 		b, encErr := r.reqCodec.Encode(req)
 		if encErr != nil {
 			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("nats: %w", encErr))
 		}
 
-		trace.SpanFromContext(ctx).SetAttributes(
-			attribute.Int("messaging.message.body.size", len(b)),
-			attribute.String("messaging.operation.type", "publish"),
+		sp.SetAttributes(
+			semconv.MessagingMessageBodySize(len(b)),
+			semconv.MessagingOperationTypeSend,
 		)
 
 		msg := nats.NewMsg(subject)
@@ -66,6 +69,11 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 		if reqErr != nil {
 			return errors.Join(goflux.ErrTransport, fmt.Errorf("nats: %w", reqErr))
 		}
+
+		sp.SetAttributes(
+			gsemconv.ReplyBodySize(len(reply.Data)),
+			gsemconv.ReplySubject(reply.Subject),
+		)
 
 		if decErr := r.respCodec.Decode(reply.Data, &result); decErr != nil {
 			return errors.Join(goflux.ErrDecode, fmt.Errorf("nats: %w", decErr))

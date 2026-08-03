@@ -1,7 +1,7 @@
 package http
 
 import (
-	semconvmsg "go.opentelemetry.io/otel/semconv/v1.40.0/messagingconv"
+	semconvmsg "go.opentelemetry.io/otel/semconv/v1.41.0/messagingconv"
 )
 
 // system is the goflux.system attribute value for this transport.

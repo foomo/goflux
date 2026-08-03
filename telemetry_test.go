@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	semconvmsg "go.opentelemetry.io/otel/semconv/v1.40.0/messagingconv"
+	semconvmsg "go.opentelemetry.io/otel/semconv/v1.41.0/messagingconv"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -53,21 +53,21 @@ func TestRecordPublish_SpanAndMetrics(t *testing.T) {
 	// Verify span
 	spans := spanExporter.GetSpans()
 	require.Len(t, spans, 1)
-	assert.Equal(t, "goflux.publish", spans[0].Name)
+	assert.Equal(t, "send orders.created", spans[0].Name)
 	assert.Equal(t, trace.SpanKindProducer, spans[0].SpanKind)
 
 	// Verify span has message ID attribute
 	found := false
 
 	for _, attr := range spans[0].Attributes {
-		if string(attr.Key) == "goflux.message.id" {
+		if string(attr.Key) == "messaging.message.id" {
 			assert.Equal(t, "msg-123", attr.Value.AsString())
 
 			found = true
 		}
 	}
 
-	assert.True(t, found, "expected goflux.message.id attribute on span")
+	assert.True(t, found, "expected messaging.message.id attribute on span")
 
 	// Verify metrics
 	var rm metricdata.ResourceMetrics
@@ -113,7 +113,7 @@ func TestRecordProcess_SpanKindConsumer(t *testing.T) {
 
 	spans := spanExporter.GetSpans()
 	require.Len(t, spans, 1)
-	assert.Equal(t, "goflux.process", spans[0].Name)
+	assert.Equal(t, "process orders.created", spans[0].Name)
 	assert.Equal(t, trace.SpanKindConsumer, spans[0].SpanKind)
 
 	// Verify consumed messages metric

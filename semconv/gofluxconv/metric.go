@@ -5,6 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	msgsemconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 
 	"github.com/foomo/goflux/semconv"
 )
@@ -57,7 +58,7 @@ func (g AckOutcome) Add(ctx context.Context, incr int64, action, subject string,
 
 	base := []attribute.KeyValue{
 		semconv.AckAction(action),
-		semconv.DestinationName(subject),
+		msgsemconv.MessagingDestinationName(subject),
 		semconv.AckError(hasError),
 	}
 
@@ -89,7 +90,7 @@ func NewConsumerLag(m metric.Meter, subject string, lagFn func() int64) (Consume
 		metric.WithDescription(consumerLagDesc),
 		metric.WithInt64Callback(func(_ context.Context, obs metric.Int64Observer) error {
 			obs.Observe(lagFn(),
-				metric.WithAttributes(semconv.DestinationName(subject)),
+				metric.WithAttributes(msgsemconv.MessagingDestinationName(subject)),
 			)
 
 			return nil
