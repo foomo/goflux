@@ -290,6 +290,7 @@ See [Stream Processing](/guide/patterns/stream-processor) for details and exampl
 | `WithPropagator(p)` | Set text-map propagator |
 | `RecordPublish(ctx, subject, system, fn)` | Producer span |
 | `RecordProcess(ctx, subject, system, fn, opts...)` | Consumer span |
+| `RecordFetch(ctx, subject, system, count, fn)` | Consumer span (pull fetch) |
 | `RecordRequest(ctx, subject, system, fn)` | Request-reply client span |
 | `RecordAckOutcome(ctx, action, subject, err)` | Record ack/nak/term outcome |
 | `RegisterLag(subject, lagFn)` | Observable gauge |
