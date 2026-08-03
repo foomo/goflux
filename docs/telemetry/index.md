@@ -36,7 +36,7 @@ if err != nil {
 func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
 ```
 
-Opens a **producer** span (`SpanKindProducer`), executes `fn`, then records duration and sent-message counter. The `system` attribute identifies the transport (e.g. `"nats"`, `"http"`).
+Opens a **producer** span named `send <subject>` (`SpanKindProducer`), executes `fn`, then records duration and sent-message counter. The `system` attribute identifies the transport (e.g. `"nats"`, `"http"`).
 
 ### RecordProcess
 
@@ -44,7 +44,7 @@ Opens a **producer** span (`SpanKindProducer`), executes `fn`, then records dura
 func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error, opts ...ProcessOption) error
 ```
 
-Opens a **consumer** span (`SpanKindConsumer`), executes `fn`, then records duration and consumed-message counter. Pass `WithRemoteSpanContext` to attach the producer span as a link for async transports.
+Opens a **consumer** span named `process <subject>` (`SpanKindConsumer`), executes `fn`, then records duration and consumed-message counter. Pass `WithRemoteSpanContext` to attach the producer span as a link for async transports.
 
 ### RecordFetch
 
@@ -52,7 +52,7 @@ Opens a **consumer** span (`SpanKindConsumer`), executes `fn`, then records dura
 func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system SystemAttr, count int, fn func(context.Context) error) error
 ```
 
-Opens a **consumer** span for pull-based fetch operations. Records the batch message count alongside the standard duration and counter metrics.
+Opens a **consumer** span named `receive <subject>` (`SpanKindConsumer`) for pull-based fetch operations. Records the batch message count alongside the standard duration and counter metrics.
 
 ### RecordRequest
 
@@ -60,7 +60,7 @@ Opens a **consumer** span for pull-based fetch operations. Records the batch mes
 func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
 ```
 
-Opens a **client** span (`SpanKindClient`) for request-reply calls. Records duration and sent-message counter.
+Opens a **client** span named `send <subject>` (`SpanKindClient`) for request-reply calls. Records duration and sent-message counter.
 
 ### RegisterLag
 
@@ -81,8 +81,26 @@ All metrics follow OpenTelemetry messaging semantic conventions.
 | `goflux.client.operation.duration` | Histogram | Publish operation duration (ms) |
 | `goflux.process.duration` | Histogram | Handler processing duration (ms) |
 | `goflux.consumer.lag` | Observable Gauge | Messages waiting in subscriber buffer |
+| `goflux.processor.ack.outcome` | Counter | Ack / nak / nak_with_delay / term outcomes per subject |
 
-Each metric carries `destination.name` (subject) and `error.type` attributes.
+Each metric carries `messaging.destination.name` (subject) and `error.type` attributes.
+
+## Span Attributes
+
+Spans follow OpenTelemetry messaging semantic conventions and are named `{operation} {subject}` — e.g. `send orders.created`, `process orders.created`, `receive orders.created`. The following attributes are set:
+
+| Attribute | Where | Notes |
+|-----------|-------|-------|
+| `messaging.system` | all spans | Transport id (`nats`, `nats-jetstream`, `http`, `go_channel`) |
+| `messaging.destination.name` | all spans | Subject |
+| `messaging.operation.name` | all spans | `send` / `process` / `receive` |
+| `messaging.operation.type` | transport publish & process spans | `send` / `process` |
+| `messaging.message.body.size` | transport spans | Encoded payload size (bytes) |
+| `messaging.message.id` | when `WithMessageID` is set | Business-level message ID |
+| `messaging.batch.message_count` | fetch spans | Pull batch size |
+| `messaging.consumer.group.name` | NATS / JetStream consumer spans | Queue group (NATS) or durable/consumer name (JetStream) |
+| `goflux.reply.body.size` | request-reply legs | Reply payload size (bytes); a dedicated key so it does not overwrite the request's `messaging.message.body.size` |
+| `goflux.reply.subject` | NATS requester | Subject the reply was received on |
 
 ## Context Propagation
 
@@ -143,7 +161,7 @@ id := goflux.MessageID(ctx)
 ```
 
 - Propagated via the `X-Message-ID` header (`goflux.MessageIDHeader`)
-- Attached as `goflux.message.id` span attribute on publish and process spans
+- Attached as `messaging.message.id` span attribute on publish and process spans
 - Purely opt-in: if not set, no header or attribute is added
 
 ## Transport System Attributes
@@ -152,7 +170,7 @@ Each transport declares a system attribute used in metrics and spans:
 
 | Transport | System Attribute |
 |-----------|-----------------|
-| `pkg/channel` | `go_channel` |
-| `pkg/nats` | `nats` |
-| `pkg/jetstream` | `nats-jetstream` |
-| `pkg/http` | `http` |
+| `transport/channel` | `go_channel` |
+| `transport/nats` | `nats` |
+| `transport/jetstream` | `nats-jetstream` |
+| `transport/http` | `http` |

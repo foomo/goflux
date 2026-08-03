@@ -7,8 +7,9 @@ import (
 
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
-	"go.opentelemetry.io/otel/attribute"
+	gsemconv "github.com/foomo/goflux/semconv"
 	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -87,9 +88,10 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 		}
 
 		_ = r.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
-			trace.SpanFromContext(ctx).SetAttributes(
-				attribute.Int("messaging.message.body.size", len(body)),
-				attribute.String("messaging.operation.type", "process"),
+			sp := trace.SpanFromContext(ctx)
+			sp.SetAttributes(
+				semconv.MessagingMessageBodySize(len(body)),
+				semconv.MessagingOperationTypeProcess,
 			)
 
 			resp, hErr := handler(ctx, req)
@@ -105,6 +107,11 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 
 				return encErr
 			}
+
+			sp.SetAttributes(
+				gsemconv.ReplyBodySize(len(respBody)),
+				semconv.HTTPResponseStatusCode(http.StatusOK),
+			)
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)

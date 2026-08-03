@@ -9,7 +9,7 @@ import (
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
 	"github.com/nats-io/nats.go/jetstream"
-	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -38,6 +38,16 @@ func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[
 // message filtering is determined by the jetstream.Consumer configuration
 // passed to [NewSubscriber].
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
+	// Derive the consumer group name from cached consumer info (no network
+	// call). A durable name is preferred; fall back to the ephemeral name.
+	consumerGroup := ""
+	if info := s.consumer.CachedInfo(); info != nil {
+		consumerGroup = info.Config.Durable
+		if consumerGroup == "" {
+			consumerGroup = info.Name
+		}
+	}
+
 	cc, err := s.consumer.Consume(func(msg jetstream.Msg) {
 		var v T
 		if err := s.decoder(msg.Data(), &v); err != nil {
@@ -68,10 +78,15 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		}.WithAcker(&jsAcker{msg: msg})
 
 		if err := s.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
-			trace.SpanFromContext(ctx).SetAttributes(
-				attribute.Int("messaging.message.body.size", len(msg.Data())),
-				attribute.String("messaging.operation.type", "process"),
+			sp := trace.SpanFromContext(ctx)
+			sp.SetAttributes(
+				semconv.MessagingMessageBodySize(len(msg.Data())),
+				semconv.MessagingOperationTypeProcess,
 			)
+
+			if consumerGroup != "" {
+				sp.SetAttributes(semconv.MessagingConsumerGroupName(consumerGroup))
+			}
 
 			return handler(ctx, m)
 		}, goflux.WithRemoteSpanContext(remoteSpanCtx)); err != nil {

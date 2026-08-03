@@ -9,7 +9,7 @@ import (
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
 	"github.com/nats-io/nats.go"
-	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -52,10 +52,15 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 		m := goflux.Message[T]{Subject: msg.Subject, Payload: v, Header: extractGofluxHeaders(msg.Header)}
 
 		if err := s.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
-			trace.SpanFromContext(ctx).SetAttributes(
-				attribute.Int("messaging.message.body.size", len(msg.Data)),
-				attribute.String("messaging.operation.type", "process"),
+			sp := trace.SpanFromContext(ctx)
+			sp.SetAttributes(
+				semconv.MessagingMessageBodySize(len(msg.Data)),
+				semconv.MessagingOperationTypeProcess,
 			)
+
+			if s.queueGroup != "" {
+				sp.SetAttributes(semconv.MessagingConsumerGroupName(s.queueGroup))
+			}
 
 			return handler(ctx, m)
 		}, goflux.WithRemoteSpanContext(remoteSpanCtx)); err != nil {

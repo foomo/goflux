@@ -12,8 +12,9 @@ import (
 
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
-	"go.opentelemetry.io/otel/attribute"
+	gsemconv "github.com/foomo/goflux/semconv"
 	"go.opentelemetry.io/otel/propagation"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -60,9 +61,10 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 			return errors.Join(goflux.ErrPublish, goflux.ErrEncode, fmt.Errorf("http: %w", encErr))
 		}
 
-		trace.SpanFromContext(ctx).SetAttributes(
-			attribute.Int("messaging.message.body.size", len(b)),
-			attribute.String("messaging.operation.type", "publish"),
+		sp := trace.SpanFromContext(ctx)
+		sp.SetAttributes(
+			semconv.MessagingMessageBodySize(len(b)),
+			semconv.MessagingOperationTypeSend,
 		)
 
 		target := r.baseURL + "/" + url.PathEscape(subject)
@@ -89,6 +91,11 @@ func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req 
 		if readErr != nil {
 			return errors.Join(goflux.ErrTransport, fmt.Errorf("http: %w", readErr))
 		}
+
+		sp.SetAttributes(
+			semconv.HTTPResponseStatusCode(httpResp.StatusCode),
+			gsemconv.ReplyBodySize(len(respBody)),
+		)
 
 		if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
 			return errors.Join(goflux.ErrTransport, fmt.Errorf("http: server returned %d for %s", httpResp.StatusCode, target))

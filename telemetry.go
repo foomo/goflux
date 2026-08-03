@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/foomo/goflux/semconv"
 	"github.com/foomo/goflux/semconv/gofluxconv"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,7 +12,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/propagation"
-	semconvmsg "go.opentelemetry.io/otel/semconv/v1.40.0/messagingconv"
+	msgsemconv "go.opentelemetry.io/otel/semconv/v1.41.0"
+	semconvmsg "go.opentelemetry.io/otel/semconv/v1.41.0/messagingconv"
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
@@ -169,14 +169,18 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 
 // RecordPublish opens a producer span, calls fn, records duration and counter.
 func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system semconvmsg.SystemAttr, fn func(context.Context) error) error {
+	const opName = "send"
+
 	attrs := []attribute.KeyValue{
 		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
+		msgsemconv.MessagingSystemKey.String(string(system)),
+		msgsemconv.MessagingOperationName(opName),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, semconv.MessageID(id))
+		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.publish",
+	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(attrs...),
 	)
@@ -188,13 +192,13 @@ func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system se
 
 	errType := errorType(err)
 	t.sentMessages.Add(ctx, 1,
-		"publish",
+		opName,
 		system,
 		t.sentMessages.AttrDestinationName(subject),
 		t.sentMessages.AttrErrorType(errType),
 	)
 	t.publishDuration.Record(ctx, s,
-		"publish",
+		opName,
 		system,
 		t.publishDuration.AttrDestinationName(subject),
 		t.publishDuration.AttrErrorType(errType),
@@ -228,11 +232,15 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		o(&cfg)
 	}
 
+	const opName = "process"
+
 	attrs := []attribute.KeyValue{
 		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
+		msgsemconv.MessagingSystemKey.String(string(system)),
+		msgsemconv.MessagingOperationName(opName),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, semconv.MessageID(id))
+		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
 	startOpts := []trace.SpanStartOption{
@@ -243,7 +251,7 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		startOpts = append(startOpts, trace.WithLinks(trace.Link{SpanContext: cfg.linkedSpanCtx}))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.process", startOpts...)
+	ctx, span := t.tracer.Start(ctx, opName+" "+subject, startOpts...)
 	defer span.End()
 
 	start := time.Now()
@@ -270,15 +278,19 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 
 // RecordFetch opens a consumer span for a pull-based fetch operation.
 func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semconvmsg.SystemAttr, count int, fn func(context.Context) error) error {
+	const opName = "receive"
+
 	attrs := []attribute.KeyValue{
 		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
+		msgsemconv.MessagingSystemKey.String(string(system)),
+		msgsemconv.MessagingOperationName(opName),
 		attribute.Int("messaging.batch.message_count", count),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, semconv.MessageID(id))
+		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.fetch",
+	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(attrs...),
 	)
@@ -308,14 +320,18 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 
 // RecordRequest opens a client span for a request-reply call.
 func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system semconvmsg.SystemAttr, fn func(context.Context) error) error {
+	const opName = "send"
+
 	attrs := []attribute.KeyValue{
 		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
+		msgsemconv.MessagingSystemKey.String(string(system)),
+		msgsemconv.MessagingOperationName(opName),
 	}
 	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, semconv.MessageID(id))
+		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, "goflux.request",
+	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attrs...),
 	)
@@ -327,13 +343,13 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 
 	errType := errorType(err)
 	t.sentMessages.Add(ctx, 1,
-		"publish",
+		opName,
 		system,
 		t.sentMessages.AttrDestinationName(subject),
 		t.sentMessages.AttrErrorType(errType),
 	)
 	t.publishDuration.Record(ctx, s,
-		"publish",
+		opName,
 		system,
 		t.publishDuration.AttrDestinationName(subject),
 		t.publishDuration.AttrErrorType(errType),

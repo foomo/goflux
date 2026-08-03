@@ -4,25 +4,17 @@ import "go.opentelemetry.io/otel/attribute"
 
 // Attribute keys for goflux telemetry.
 const (
-	// MessageIDKey is the attribute key for the business-level message ID.
-	MessageIDKey = attribute.Key("goflux.message.id")
-	// DestinationNameKey is the attribute key for the destination (subject) name.
-	DestinationNameKey = attribute.Key("goflux.destination.name")
 	// AckActionKey is the attribute key for the acknowledgment action (ack, nak, nak_with_delay, term).
 	AckActionKey = attribute.Key("goflux.ack.action")
 	// AckErrorKey is the attribute key indicating whether the ack operation itself failed.
 	AckErrorKey = attribute.Key("goflux.ack.error")
+	// ReplyBodySizeKey is the attribute key for the reply/response body size, in
+	// bytes. The standard messaging.message.body.size key describes the inbound
+	// request, so the reply leg needs its own key to avoid overwriting it.
+	ReplyBodySizeKey = attribute.Key("goflux.reply.body.size")
+	// ReplySubjectKey is the attribute key for the subject the reply was received on.
+	ReplySubjectKey = attribute.Key("goflux.reply.subject")
 )
-
-// MessageID returns an attribute with the business-level message ID.
-func MessageID(v string) attribute.KeyValue {
-	return MessageIDKey.String(v)
-}
-
-// DestinationName returns an attribute with the destination (subject) name.
-func DestinationName(v string) attribute.KeyValue {
-	return DestinationNameKey.String(v)
-}
 
 // AckAction returns an attribute with the acknowledgment action.
 func AckAction(v string) attribute.KeyValue {
@@ -32,4 +24,14 @@ func AckAction(v string) attribute.KeyValue {
 // AckError returns an attribute indicating whether the ack operation itself failed.
 func AckError(v bool) attribute.KeyValue {
 	return AckErrorKey.Bool(v)
+}
+
+// ReplyBodySize returns an attribute with the reply/response body size in bytes.
+func ReplyBodySize(v int) attribute.KeyValue {
+	return ReplyBodySizeKey.Int(v)
+}
+
+// ReplySubject returns an attribute with the subject the reply was received on.
+func ReplySubject(v string) attribute.KeyValue {
+	return ReplySubjectKey.String(v)
 }
