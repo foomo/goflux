@@ -93,13 +93,9 @@ the [Getting Started](https://foomo.github.io/goflux/guide/getting-started) guid
 
 Full documentation: [https://foomo.github.io/goflux/](https://foomo.github.io/goflux/)
 
-## Contributing
+## How to Contribute
 
-```bash
-make check   # tidy + generate + lint + test + audit (full CI flow)
-```
-
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
+Contributions are welcome! Please read the [contributing guide](docs/CONTRIBUTING.md).
 
 ![Contributors](https://contributors-table.vercel.app/image?repo=foomo/goflux&width=50&columns=15)
 
