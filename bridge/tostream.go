@@ -10,6 +10,9 @@ import (
 // ToStream bridges a [goflux.Subscriber] into a [goflow.Stream]. It launches
 // Subscribe in a goroutine via [goflux.ToChan] and wraps the resulting channel
 // as a Stream.
+//
+// Like [goflux.ToChan], it does not return until the subscription is
+// established, so a publish sequenced after it is not lost.
 func ToStream[T any](ctx context.Context, sub goflux.Subscriber[T], subject string, bufSize int) goflow.Stream[goflux.Message[T]] {
 	return goflow.From(ctx, goflux.ToChan(ctx, sub, subject, bufSize))
 }

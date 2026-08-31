@@ -16,7 +16,7 @@ Write business logic against core interfaces. Swap transports without touching h
 
 | Layer                  | What it provides                                                                                                                  |
 |------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
-| **Core Interfaces**    | `Publisher[T]`, `Subscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]`                       |
+| **Core Interfaces**    | `Publisher[T]`, `Subscriber[T]`, `ReadySubscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
 | **Transports**         | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces                                                 |
 | **Middleware**         | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`                                             |
 | **Pipeline Operators** | `pipe.New`, `pipe.NewMap`, `pipe.NewFlatMap`, `ToChan`, `bridge.ToStream`, `bridge.FromStream`, `BindPublisher`, `RetryPublisher` |
@@ -71,11 +71,15 @@ func main() {
   pub := channel.NewPublisher(bus)
   sub, _ := channel.NewSubscriber(bus, 1)
 
-  go sub.Subscribe(ctx, "greetings", func(_ context.Context, msg goflux.Message[string]) error {
+  // Subscribe blocks, so run it in a goroutine. SubscribeWithReady signals once
+  // the subscription is live, so the publish below cannot be lost.
+  ready := make(chan struct{})
+  go sub.SubscribeWithReady(ctx, "greetings", func(_ context.Context, msg goflux.Message[string]) error {
     fmt.Println(msg.Subject, msg.Payload)
     cancel()
     return nil
-  })
+  }, func() { close(ready) })
+  <-ready
 
   _ = pub.Publish(ctx, "greetings", "Hello, goflux!")
   <-ctx.Done()

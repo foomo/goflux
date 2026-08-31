@@ -31,6 +31,16 @@ func NewSubscriber[T any](conn *nats.Conn, decoder goencode.Decoder[T, []byte], 
 
 `Subscribe` registers a callback with the NATS connection and blocks until the context is cancelled, then unsubscribes. Decode failures are logged and the message is dropped.
 
+```go
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error
+```
+
+`SubscribeWithReady` behaves like `Subscribe` but invokes `ready` once the **server** has acknowledged the subscription. This matters more here than on any other transport: `nats.Conn.Subscribe` only buffers the SUB frame client-side, so its return proves nothing about server state, and core NATS discards messages that have no matching subscriber -- silently, with no error on either side. `SubscribeWithReady` forces a `Flush` round-trip before calling `ready`.
+
+::: warning
+Use `SubscribeWithReady` whenever a publish is sequenced after a subscribe. With plain `Subscribe` the publish can reach the server first and the message is lost without a trace.
+:::
+
 `Close` calls `conn.Drain()`.
 
 ## Requester
@@ -61,6 +71,12 @@ func NewResponder[Req, Resp any](
 
 `Serve` subscribes to the subject, decodes incoming requests, passes them to the `goflux.RequestHandler[Req, Resp]`, encodes the response, and sends it back via NATS reply. The call blocks until the context is cancelled.
 
+```go
+func (r *Responder[Req, Resp]) ServeWithReady(ctx context.Context, subject string, handler goflux.RequestHandler[Req, Resp], ready func()) error
+```
+
+`ServeWithReady` invokes `ready` once the server has acknowledged the responder's subscription, using the same `Flush` round-trip as the Subscriber. Without it, a request issued immediately after `Serve` starts can be dropped -- which the caller sees only as a request timeout, never naming the real cause.
+
 `Close` calls `conn.Drain()`.
 
 ## Options
@@ -73,7 +89,8 @@ func NewResponder[Req, Resp any](
 ## Behavior
 
 - **Caller owns the connection** -- the caller is responsible for connecting and closing `*nats.Conn`. `Close()` on Publisher/Subscriber calls `conn.Drain()`.
-- **Fire-and-forget** -- core NATS has no ack/nak. `Message.Acker` is nil.
+- **Fire-and-forget** -- core NATS has no ack/nak. `Message.Acker` is nil. A message published with no matching subscriber is dropped silently, which is why readiness matters.
+- **Readiness via flush** -- `SubscribeWithReady` and `ServeWithReady` issue a `Flush` round-trip so `ready` means "the server registered the subscription", not "a frame was buffered locally". `Flush` is used rather than `FlushWithContext` because the subscription's lifetime context legitimately has no deadline; the connection timeout bounds the call instead.
 - **OTel context propagation** -- uses span links (not parent-child) because async messaging is temporally decoupled. The producer's span context is extracted via `ExtractSpanContext` and attached as a link on the consumer span.
 - **Header carrier** -- a custom `natsHeaderCarrier` preserves raw key casing (unlike `http.Header` which canonicalizes keys), ensuring W3C TraceContext lowercase keys survive the round-trip.
 - **Message ID** -- if `goflux.MessageID(ctx)` is set, it is propagated via the `X-Message-ID` header.
@@ -114,13 +131,18 @@ func main() {
 	pub := gofluxnats.NewPublisher[Event](conn, codec.Encode)
 	sub := gofluxnats.NewSubscriber[Event](conn, codec.Decode)
 
-	// Subscribe in a goroutine -- Subscribe blocks until ctx is cancelled.
+	// Subscribe in a goroutine -- SubscribeWithReady blocks until ctx is
+	// cancelled, and signals once the server has registered the subscription.
+	ready := make(chan struct{})
 	go func() {
-		_ = sub.Subscribe(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
+		_ = sub.SubscribeWithReady(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
 			fmt.Printf("received: %s %s\n", msg.Payload.ID, msg.Payload.Name)
 			return nil
-		})
+		}, func() { close(ready) })
 	}()
+
+	// Wait for the subscription. Publishing before this point can be lost.
+	<-ready
 
 	// Publish a message.
 	if err := pub.Publish(ctx, "events.created", Event{ID: "1", Name: "signup"}); err != nil {
@@ -169,11 +191,16 @@ func main() {
 
 	// Start responder in a goroutine.
 	responder := gofluxnats.NewResponder[OrderRequest, OrderResponse](conn, reqCodec, respCodec)
+	ready := make(chan struct{})
 	go func() {
-		_ = responder.Serve(ctx, "orders.create", func(ctx context.Context, req OrderRequest) (OrderResponse, error) {
+		_ = responder.ServeWithReady(ctx, "orders.create", func(ctx context.Context, req OrderRequest) (OrderResponse, error) {
 			return OrderResponse{OrderID: "ord-42", Status: "created"}, nil
-		})
+		}, func() { close(ready) })
 	}()
+
+	// Wait for the responder. A request sent before this point is dropped and
+	// surfaces only as a timeout.
+	<-ready
 
 	// Send a request.
 	requester := gofluxnats.NewRequester[OrderRequest, OrderResponse](conn, reqCodec, respCodec)

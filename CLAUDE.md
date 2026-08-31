@@ -92,7 +92,8 @@ Handler factories that compose `Handler[T]` and `Publisher[T]`:
 
 ### Adapters
 
-- `ToChan[T]` (root package) — bridge subscriber to `<-chan Message[T]`
+- `ToChan[T]` (root package) — bridge subscriber to `<-chan Message[T]`; does not return until the subscription is
+  established (uses `SubscribeWithReady` internally), so `bridge.ToStream` inherits the same guarantee
 - `bridge.ToStream[T]` / `bridge.FromStream[T]` (`bridge/` submodule) — bridge to/from `goflow.Stream[Message[T]]`
 - `Bind[T]` — fixed-subject publisher wrapper
 - `RetryPublisher[T]` — publish retry with backoff
@@ -137,6 +138,10 @@ uses `gofuncy.Go` (fire-and-forget) and `gofuncy.All` (concurrent iteration). Te
 ## Key Design Rules
 
 - `Subscribe` always blocks until ctx is cancelled — run in a goroutine
+- `ReadySubscriber[T]` adds `SubscribeWithReady(ctx, subject, handler, ready)`. Every transport implements it; the
+  package-level `SubscribeWithReady` helper falls back to `Subscribe` (calling `ready()` first) for third-party
+  subscribers. `ready` fires at most once, only on successful registration, never after the call returns. Sequence
+  publishes on it — never on `time.Sleep`. NATS `Responder` has the analogous `ServeWithReady`
 - Transport constructors do not own connections — caller connects and closes
 - `Publisher.Close` on `chan/` is a no-op; caller owns inner publishers
 - Non-nil error from handler signals failure; semantics are transport-specific

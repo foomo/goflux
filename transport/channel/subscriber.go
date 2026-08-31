@@ -40,11 +40,24 @@ func (s *Subscriber[T]) Len() int64 {
 }
 
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
+	return s.SubscribeWithReady(ctx, subject, handler, func() {})
+}
+
+// SubscribeWithReady behaves like [Subscriber.Subscribe] but invokes ready once
+// the channel is registered on the bus, then blocks until ctx is cancelled.
+//
+// Bus registration is an in-process, mutex-guarded operation, so it is already
+// complete when it returns; ready exists to satisfy [goflux.ReadySubscriber] and
+// let callers sequence a publish after a subscribe without knowing the
+// transport.
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error {
 	ch := make(chan goflux.Message[T], s.bufSize)
 	s.mu.Lock()
 	s.ch = ch
 	s.mu.Unlock()
 	s.bus.subscribe(subject, ch)
+
+	ready()
 
 	defer func() {
 		s.bus.unsubscribe(subject, ch)

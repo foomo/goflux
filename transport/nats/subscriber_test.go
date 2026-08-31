@@ -20,19 +20,22 @@ func ExampleNewSubscriber() {
 	done := make(chan struct{})
 	sub := fluxnats.NewSubscriber(conn, json.NewCodec[Event]().Decode)
 
+	ready := make(chan struct{})
+
 	go func() {
 		defer close(done)
 
-		_ = sub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		_ = sub.SubscribeWithReady(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload)
 			cancel()
 
 			return nil
-		})
+		}, func() { close(ready) })
 	}()
 
-	// Wait for subscription to be ready, then publish raw JSON.
-	conn.Flush()
+	// Wait until the server has registered the subscription, then publish raw
+	// JSON. Without this the publish can outrun the subscription and be dropped.
+	<-ready
 
 	if err := conn.Publish("events", []byte(`{"id":"1","name":"foo"}`)); err != nil {
 		panic(err)
@@ -42,3 +45,6 @@ func ExampleNewSubscriber() {
 
 	// Output: events {1 foo}
 }
+
+// Compile-time check: the subscriber supports readiness signalling.
+var _ goflux.ReadySubscriber[Event] = (*fluxnats.Subscriber[Event])(nil)

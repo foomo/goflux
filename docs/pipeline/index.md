@@ -217,6 +217,8 @@ func ToChan[T any](ctx context.Context, sub Subscriber[T], subject string, bufSi
 
 Bridges a `Subscriber[T]` into a plain Go channel. Launches `Subscribe` in a goroutine and forwards each `Message[T]` (including acker) into a buffered channel. The returned channel closes when `ctx` is cancelled.
 
+`ToChan` **does not return until the subscription is established**, so a publish sequenced after it is not lost. When `sub` implements [`ReadySubscriber`](/guide/core-concepts#subscriber-readiness) -- as every goflux transport does -- this is a guarantee; for third-party subscribers it degrades to the best-effort fallback.
+
 ```go
 ch := goflux.ToChan[Event](ctx, sub, "orders.>", 16)
 

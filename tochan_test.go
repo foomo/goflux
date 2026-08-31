@@ -23,8 +23,6 @@ func ExampleToChan() {
 
 	ch := goflux.ToChan[string](ctx, sub, "test", 4)
 
-	time.Sleep(10 * time.Millisecond)
-
 	_ = pub.Publish(ctx, "test", "alpha")
 	_ = pub.Publish(ctx, "test", "bravo")
 
@@ -45,8 +43,6 @@ func TestToChan_closesOnCancel(t *testing.T) {
 	require.NoError(t, err)
 
 	ch := goflux.ToChan[string](ctx, sub, "test", 1)
-
-	time.Sleep(10 * time.Millisecond)
 
 	// Send a message before cancelling so we know the subscriber is active.
 	require.NoError(t, pub.Publish(ctx, "test", "hello"))

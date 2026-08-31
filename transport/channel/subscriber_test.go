@@ -20,14 +20,12 @@ func ExampleNewSubscriber() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return sub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, sub, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload)
 			cancel()
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("subscriber"))
 
 	pub := channel.NewPublisher(bus)
@@ -38,3 +36,6 @@ func ExampleNewSubscriber() {
 	<-ctx.Done()
 	// Output: events {2 bar}
 }
+
+// Compile-time check: the subscriber supports readiness signalling.
+var _ goflux.ReadySubscriber[Event] = (*channel.Subscriber[Event])(nil)

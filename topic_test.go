@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/transport/channel"
@@ -33,17 +32,13 @@ func ExampleTopic() {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return topic.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, topic.Subscriber, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Payload.Name)
 			cancel()
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("subscriber"))
-
-	time.Sleep(10 * time.Millisecond)
 
 	if err := topic.Publish(ctx, "events", Event{ID: "1", Name: "bundled"}); err != nil {
 		panic(err)
@@ -69,18 +64,14 @@ func TestBoundTopic(t *testing.T) {
 	done := make(chan struct{})
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return bt.Subscribe(ctx, func(_ context.Context, msg goflux.Message[string]) error {
+		return bt.SubscribeWithReady(ctx, func(_ context.Context, msg goflux.Message[string]) error {
 			got = msg
 
 			close(done)
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("bound-topic-subscriber"))
-
-	time.Sleep(10 * time.Millisecond)
 
 	require.NoError(t, bt.Publish(ctx, "hello"))
 	<-done

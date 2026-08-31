@@ -56,20 +56,22 @@ func main() {
 
 	// Define a handler -- same signature regardless of transport.
 	handler := func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
-		fmt.Printf("received: nats=%s order=%s status=%s\n",
+		fmt.Printf("received: subject=%s order=%s status=%s\n",
 			msg.Subject, msg.Payload.OrderID, msg.Payload.Status)
 		return nil
 	}
 
-	// Subscribe blocks, so run it in a goroutine.
+	// Subscribe blocks, so run it in a goroutine. SubscribeWithReady signals
+	// once the subscription is live -- do not synchronise with time.Sleep.
 	done := make(chan struct{})
+	ready := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = sub.Subscribe(ctx, "orders", handler)
+		_ = sub.SubscribeWithReady(ctx, "orders", handler, func() { close(ready) })
 	}()
 
-	// Give the subscriber time to register.
-	time.Sleep(10 * time.Millisecond)
+	// Wait until the subscription is established.
+	<-ready
 
 	// Publish a message.
 	if err := pub.Publish(ctx, "orders", OrderEvent{
@@ -81,7 +83,7 @@ func main() {
 
 	cancel()
 	<-done
-	// Output: received: nats=orders order=ORD-42 status=confirmed
+	// Output: received: subject=orders order=ORD-42 status=confirmed
 }
 ```
 
@@ -131,13 +133,19 @@ func main() {
 		return nil
 	}
 
+	// Core NATS drops messages that have no matching subscriber, silently. Wait
+	// for readiness before publishing, or this message can be lost.
+	ready := make(chan struct{})
 	go func() {
-		_ = sub.Subscribe(ctx, "orders", handler)
+		_ = sub.SubscribeWithReady(ctx, "orders", handler, func() { close(ready) })
 	}()
+	<-ready
 
 	_ = pub.Publish(ctx, "orders", OrderEvent{OrderID: "ORD-42", Status: "confirmed"})
 }
 ```
+
+See [Subscriber Readiness](./core-concepts.md#subscriber-readiness) for why this matters and what the guarantee covers.
 
 Network transports take an `goencode.Encoder[T, []byte]` for publishers and a `goencode.Decoder[T, []byte]` for subscribers. A `goencode.Codec[T, []byte]` provides both as `.Encode` and `.Decode` method values. Encoders and decoders are function types, composable via `goencode.PipeEncoder` / `goencode.PipeDecoder`. The `goencode` library provides codecs for JSON, Protocol Buffers, and other formats.
 

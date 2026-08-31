@@ -3,7 +3,6 @@ package goflux_test
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/transport/channel"
@@ -29,19 +28,14 @@ func ExampleBindSubscriber() {
 	bound := goflux.BindSubscriber[Event](sub, "orders")
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		// No nats argument — bound subscriber always uses "orders".
-		return bound.Subscribe(ctx, func(_ context.Context, msg goflux.Message[Event]) error {
+		// No subject argument — bound subscriber always uses "orders".
+		return bound.SubscribeWithReady(ctx, func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload.Name)
 			cancel()
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("subscriber"))
-
-	// Allow subscriber to register.
-	time.Sleep(10 * time.Millisecond)
 
 	if err := pub.Publish(ctx, "orders", Event{ID: "1", Name: "widget"}); err != nil {
 		panic(err)

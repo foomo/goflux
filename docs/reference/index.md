@@ -31,17 +31,24 @@ Quick reference for all goflux types, interfaces, and operators.
 ### Interfaces
 
 ```go
-// Publisher sends encoded messages to a nats/topic.
+// Publisher sends encoded messages to a subject.
 type Publisher[T any] interface {
     Publish(ctx context.Context, subject string, v T) error
     Close() error
 }
 
-// Subscriber listens on a nats and dispatches decoded messages to a Handler.
+// Subscriber listens on a subject and dispatches decoded messages to a Handler.
 // Subscribe blocks until ctx is cancelled or a fatal error occurs.
 type Subscriber[T any] interface {
     Subscribe(ctx context.Context, subject string, handler Handler[T]) error
     Close() error
+}
+
+// ReadySubscriber is an optional interface for subscribers that can signal
+// when their subscription is established. All goflux transports implement it.
+type ReadySubscriber[T any] interface {
+    Subscriber[T]
+    SubscribeWithReady(ctx context.Context, subject string, handler Handler[T], ready func()) error
 }
 
 // Requester sends a typed request and waits for a typed response.
@@ -56,6 +63,28 @@ type Responder[Req, Resp any] interface {
     Close() error
 }
 ```
+
+### Readiness
+
+`Subscribe` blocks for the lifetime of the subscription, so it has no return value that can mean "registered". A publish sequenced after a `go sub.Subscribe(...)` is therefore a race. `ReadySubscriber` closes that gap.
+
+| Function / Method | Description |
+|-------------------|-------------|
+| `SubscribeWithReady(ctx, sub, subject, handler, ready)` | Package-level helper: uses `ReadySubscriber` when `sub` implements it, otherwise calls `ready()` then `Subscribe` |
+| `sub.SubscribeWithReady(ctx, subject, handler, ready)` | Transport method — `ready()` fires once the subscription is established |
+| `bound.SubscribeWithReady(ctx, handler, ready)` | `BoundSubscriber` variant; delegates to the wrapped subscriber |
+| `responder.ServeWithReady(ctx, subject, handler, ready)` | NATS `Responder` variant — `ready()` fires once the server acknowledged the subscription |
+
+Contract:
+
+- `ready` is called **at most once**, and never after `SubscribeWithReady` returns.
+- If registration fails, the error is returned and `ready` is **not** called.
+- `ready` must not block.
+- For network transports, "established" means the **broker** acknowledged the subscription — not merely that a frame was buffered locally.
+
+The package-level fallback (for third-party `Subscriber` implementations that do not implement `ReadySubscriber`) calls `ready()` immediately before subscribing. That is best-effort and still racy; every goflux transport takes the non-racy path.
+
+See [Subscriber Readiness](/guide/core-concepts#subscriber-readiness) for the rationale and usage.
 
 ### Handler and RequestHandler
 

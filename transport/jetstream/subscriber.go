@@ -38,6 +38,18 @@ func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[
 // message filtering is determined by the jetstream.Consumer configuration
 // passed to [NewSubscriber].
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
+	return s.SubscribeWithReady(ctx, subject, handler, func() {})
+}
+
+// SubscribeWithReady behaves like [Subscriber.Subscribe] but invokes ready once
+// the consumer is established, then blocks until ctx is cancelled.
+//
+// jetstream.Consumer.Consume sets up the pull consumer synchronously, so the
+// subscription exists once it returns without error. JetStream also persists
+// messages, so a publish that precedes the consumer is delivered rather than
+// dropped — ready is provided for interface uniformity, not to fix a loss
+// window.
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error {
 	// Derive the consumer group name from cached consumer info (no network
 	// call). A durable name is preferred; fall back to the ephemeral name.
 	consumerGroup := ""
@@ -109,6 +121,8 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 	if err != nil {
 		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("jetstream: %w", err))
 	}
+
+	ready()
 
 	<-ctx.Done()
 

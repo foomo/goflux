@@ -25,14 +25,17 @@ func ExampleNewResponder() {
 	)
 
 	// Start the responder in the background.
+	ready := make(chan struct{})
+
 	go func() {
-		_ = resp.Serve(ctx, "greet", func(_ context.Context, req Event) (Event, error) {
+		_ = resp.ServeWithReady(ctx, "greet", func(_ context.Context, req Event) (Event, error) {
 			return Event{ID: req.ID, Name: "hello " + req.Name}, nil
-		})
+		}, func() { close(ready) })
 	}()
 
-	// Allow the subscription to register.
-	conn.Flush()
+	// Wait until the server has registered the subscription. Requesting before
+	// then yields "no responders available".
+	<-ready
 
 	// Send a request via a separate Requester.
 	requester := fluxnats.NewRequester[Event, Event](
