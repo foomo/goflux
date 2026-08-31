@@ -49,14 +49,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Subscribe blocks until ctx is cancelled — run it in a goroutine.
+	// Subscribe blocks until ctx is cancelled — run it in a goroutine and wait
+	// for readiness before publishing.
+	ready := make(chan struct{})
 	go func() {
-		_ = sub.Subscribe(ctx, "orders.created", func(ctx context.Context, msg goflux.Message[OrderCreated]) error {
+		_ = sub.SubscribeWithReady(ctx, "orders.created", func(ctx context.Context, msg goflux.Message[OrderCreated]) error {
 			fmt.Printf("received order %s (total: %.2f)\n", msg.Payload.OrderID, msg.Payload.Total)
 			// HasAcker() is false — Ack/Nak are no-ops.
 			return nil
-		})
+		}, func() { close(ready) })
 	}()
+	<-ready
 
 	// Publish a message.
 	if err := pub.Publish(ctx, "orders.created", OrderCreated{

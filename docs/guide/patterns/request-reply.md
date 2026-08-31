@@ -120,6 +120,22 @@ func main() {
 }
 ```
 
+::: warning Responder readiness
+`Serve` blocks and gives no signal about when its subscription reaches the server. When the responder runs in-process alongside the requester, a request issued right after `go res.Serve(...)` can arrive before the subscription exists -- core NATS drops it, and the caller sees only a request timeout. Use `ServeWithReady` in that case:
+
+```go
+ready := make(chan struct{})
+go func() {
+	_ = res.ServeWithReady(ctx, "orders.create", handler, func() { close(ready) })
+}()
+<-ready
+
+resp, err := requester.Request(ctx, "orders.create", OrderReq{Item: "sku-1", Quantity: 3})
+```
+
+See [Subscriber Readiness](../core-concepts.md#subscriber-readiness).
+:::
+
 ## HTTP Request-Reply
 
 The HTTP transport sends requests as POST to `{baseURL}/{subject}` and deserializes the response body. This is useful for cross-service RPC over HTTP without a full RPC framework.

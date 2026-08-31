@@ -91,6 +91,56 @@ go func() {
 }()
 ```
 
+## Subscriber Readiness
+
+Because `Subscribe` blocks, it cannot return "registered" -- so starting it in a goroutine tells you nothing about when the subscription actually exists. Publishing right afterwards is a race:
+
+```go
+go func() { _ = sub.Subscribe(ctx, "orders.created", handler) }() // ❌ racy
+_ = pub.Publish(ctx, "orders.created", event)                     // may be dropped
+```
+
+With core NATS this loses the message **silently** -- the broker discards messages with no matching subscriber, and neither side reports an error. For request-reply the same race surfaces as a request timeout that never names its real cause.
+
+`ReadySubscriber` fixes this. All goflux transports implement it:
+
+```go
+type ReadySubscriber[T any] interface {
+    Subscriber[T]
+    SubscribeWithReady(ctx context.Context, subject string, handler Handler[T], ready func()) error
+}
+```
+
+`ready` is called at most once, only after the subscription is established, and never after `SubscribeWithReady` returns. If registration fails, the error is returned and `ready` is never called. `ready` must not block.
+
+```go
+ready := make(chan struct{})
+
+go func() {
+    _ = sub.SubscribeWithReady(ctx, "orders.created", handler, func() { close(ready) })
+}()
+
+<-ready // subscription is live
+
+_ = pub.Publish(ctx, "orders.created", event) // cannot be lost
+```
+
+Prefer the package-level helper when writing transport-agnostic code -- it uses `ReadySubscriber` when available and falls back to `Subscribe` (calling `ready()` first) for third-party subscribers that do not implement it:
+
+```go
+err := goflux.SubscribeWithReady(ctx, sub, "orders.created", handler, ready)
+```
+
+::: warning
+The fallback path is best-effort and still racy. It exists so third-party `Subscriber` implementations keep working -- not to provide a guarantee.
+:::
+
+::: tip
+Do not synchronise with `time.Sleep`. It is both slower than necessary and not actually a guarantee.
+:::
+
+The NATS transport implements readiness with a `Flush` round-trip: `nats.Conn.Subscribe` only buffers the SUB frame client-side, so its return proves nothing about server state. `ToChan` and `bridge.ToStream` use readiness internally and do not return until the subscription is established.
+
 ## Requester[Req, Resp] and Responder[Req, Resp]
 
 Request-reply uses two paired interfaces:
@@ -127,6 +177,20 @@ go func() {
 
 // Requester side
 requester := gofluxnats.NewRequester[GetOrderReq, GetOrderResp](conn, reqCodec, respCodec)
+
+resp, err := requester.Request(ctx, "orders.get", GetOrderReq{OrderID: "42"})
+```
+
+The NATS `Responder` has the same readiness gap as `Subscribe` -- a request issued before the responder's subscription reaches the server is dropped, and the caller sees only a timeout. Use `ServeWithReady` when the first request is sequenced after `Serve` starts:
+
+```go
+ready := make(chan struct{})
+
+go func() {
+    _ = responder.ServeWithReady(ctx, "orders.get", handler, func() { close(ready) })
+}()
+
+<-ready
 
 resp, err := requester.Request(ctx, "orders.get", GetOrderReq{OrderID: "42"})
 ```
@@ -264,11 +328,12 @@ See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `Re
 
 ::: tip Rules to Remember
 1. **Subscribe and Serve block.** Always run them in a goroutine.
-2. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
-3. **Close semantics vary.** `Close()` on channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
-4. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
-5. **Encoders and decoders are stateless function types.** Share them freely. Use `codec.Encode` / `codec.Decode` or compose with `PipeEncoder` / `PipeDecoder`.
-6. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.
+2. **Sequence publishes with readiness, not sleeps.** Use `SubscribeWithReady` / `ServeWithReady` whenever a publish or request follows a subscribe.
+3. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
+4. **Close semantics vary.** `Close()` on channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
+5. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
+6. **Encoders and decoders are stateless function types.** Share them freely. Use `codec.Encode` / `codec.Decode` or compose with `PipeEncoder` / `PipeDecoder`.
+7. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.
 :::
 
 ## What's Next

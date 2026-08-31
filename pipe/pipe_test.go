@@ -79,19 +79,15 @@ func TestNew(t *testing.T) {
 	dstCh := make(chan goflux.Message[Event], 1)
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			dstCh <- msg
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.New[Event](dstPub))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.New[Event](dstPub), ready)
 	}, gofuncy.WithName("pipe"))
 
 	require.NoError(t, srcPub.Publish(ctx, "events", Event{ID: "1", Name: "hello"}))
@@ -122,13 +118,11 @@ func TestNew_filterRejectsReturnsNil(t *testing.T) {
 	dstCh := make(chan goflux.Message[Event], 1)
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			dstCh <- msg
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	filter := func(_ context.Context, msg goflux.Message[Event]) bool {
@@ -136,9 +130,7 @@ func TestNew_filterRejectsReturnsNil(t *testing.T) {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.New[Event](dstPub, pipe.WithFilter(filter)))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.New[Event](dstPub, pipe.WithFilter(filter)), ready)
 	}, gofuncy.WithName("pipe"))
 
 	// Publish filtered message — should be silently skipped (nil return).
@@ -199,13 +191,11 @@ func TestNew_withMiddleware(t *testing.T) {
 	dstCh := make(chan goflux.Message[Event], 1)
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			dstCh <- msg
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	// Middleware that injects a message ID into context.
@@ -222,9 +212,7 @@ func TestNew_withMiddleware(t *testing.T) {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.New[Event](dstPub, pipe.WithMiddleware(mw)))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.New[Event](dstPub, pipe.WithMiddleware(mw)), ready)
 	}, gofuncy.WithName("pipe"))
 
 	require.NoError(t, srcPub.Publish(ctx, "events", Event{ID: "1", Name: "hello"}))
@@ -258,13 +246,11 @@ func TestNewMap(t *testing.T) {
 	dstCh := make(chan goflux.Message[Summary], 1)
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Summary]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Summary]) error {
 			dstCh <- msg
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	mapFn := func(_ context.Context, msg goflux.Message[Event]) (Summary, error) {
@@ -272,9 +258,7 @@ func TestNewMap(t *testing.T) {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.NewMap[Event, Summary](dstPub, mapFn))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.NewMap[Event, Summary](dstPub, mapFn), ready)
 	}, gofuncy.WithName("pipe-map"))
 
 	require.NoError(t, srcPub.Publish(ctx, "events", Event{ID: "1", Name: "hello"}))
@@ -333,13 +317,11 @@ func TestNewFlatMap(t *testing.T) {
 	dstCh := make(chan goflux.Message[LineItem], 4)
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
 			dstCh <- msg
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	flatMapFn := func(_ context.Context, msg goflux.Message[Order]) ([]LineItem, error) {
@@ -352,9 +334,7 @@ func TestNewFlatMap(t *testing.T) {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "orders", pipe.NewFlatMap[Order, LineItem](dstPub, flatMapFn))
+		return goflux.SubscribeWithReady(ctx, srcSub, "orders", pipe.NewFlatMap[Order, LineItem](dstPub, flatMapFn), ready)
 	}, gofuncy.WithName("pipe-flatmap"))
 
 	require.NoError(t, srcPub.Publish(ctx, "orders", Order{
@@ -456,20 +436,16 @@ func ExampleNew() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Event]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Event]) error {
 			fmt.Println(msg.Subject, msg.Payload)
 			cancel()
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.New[Event](dstPub))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.New[Event](dstPub), ready)
 	}, gofuncy.WithName("pipe"))
 
 	if err := srcPub.Publish(ctx, "events", Event{ID: "1", Name: "hello"}); err != nil {
@@ -504,20 +480,16 @@ func ExampleNewMap() {
 	}
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "events", func(_ context.Context, msg goflux.Message[Summary]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "events", func(_ context.Context, msg goflux.Message[Summary]) error {
 			fmt.Println(msg.Subject, msg.Payload)
 			cancel()
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "events", pipe.NewMap[Event, Summary](dstPub, mapFn))
+		return goflux.SubscribeWithReady(ctx, srcSub, "events", pipe.NewMap[Event, Summary](dstPub, mapFn), ready)
 	}, gofuncy.WithName("pipe-map"))
 
 	if err := srcPub.Publish(ctx, "events", Event{ID: "1", Name: "hello"}); err != nil {
@@ -559,9 +531,7 @@ func ExampleNewFlatMap() {
 	var count int
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return dstSub.Subscribe(ctx, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
+		return goflux.SubscribeWithReady(ctx, dstSub, "orders", func(_ context.Context, msg goflux.Message[LineItem]) error {
 			fmt.Println(msg.Payload.OrderID, msg.Payload.Item)
 
 			count++
@@ -570,13 +540,11 @@ func ExampleNewFlatMap() {
 			}
 
 			return nil
-		})
+		}, ready)
 	}, gofuncy.WithName("dst-subscriber"))
 
 	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
-		ready()
-
-		return srcSub.Subscribe(ctx, "orders", pipe.NewFlatMap[Order, LineItem](dstPub, flatMapFn))
+		return goflux.SubscribeWithReady(ctx, srcSub, "orders", pipe.NewFlatMap[Order, LineItem](dstPub, flatMapFn), ready)
 	}, gofuncy.WithName("pipe-flatmap"))
 
 	if err := srcPub.Publish(ctx, "orders", Order{ID: "o1", Items: []string{"widget", "gadget"}}); err != nil {

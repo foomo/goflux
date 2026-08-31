@@ -94,7 +94,20 @@ func (s *Subscriber[T]) Mux() *http.ServeMux {
 // Responses: 204 on success, 400 on decode failure, 405 on wrong method,
 // 413 if body exceeds max size, 500 if the handler returns an error.
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
+	return s.SubscribeWithReady(ctx, subject, handler, func() {})
+}
+
+// SubscribeWithReady behaves like [Subscriber.Subscribe] but invokes ready once
+// the route is registered on the mux, then blocks until ctx is cancelled.
+//
+// ready reports mux registration only. This Subscriber does not own a listener,
+// so it cannot report that the HTTP server is accepting connections — callers
+// that need that must synchronise on their own server startup as well.
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error {
 	s.mux.Handle(s.basePath+"/"+subject, s.Handler(subject, handler))
+
+	ready()
+
 	// Subscribe is non-blocking here — the server is started externally.
 	// Block until ctx is cancelled so the caller's goroutine stays alive.
 	<-ctx.Done()

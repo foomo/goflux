@@ -85,7 +85,6 @@ test.bench:
 ## Run security audit
 audit:
 	@echo "〉security audit"
-	@go install golang.org/x/vuln/cmd/govulncheck@latest
 	@govulncheck ./...
 
 .PHONY: tidy

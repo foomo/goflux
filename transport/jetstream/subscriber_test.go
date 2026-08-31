@@ -63,3 +63,6 @@ func ExampleNewSubscriber() {
 
 	// Output: events.created {1 foo}
 }
+
+// Compile-time check: the subscriber supports readiness signalling.
+var _ goflux.ReadySubscriber[Event] = (*fluxjetstream.Subscriber[Event])(nil)

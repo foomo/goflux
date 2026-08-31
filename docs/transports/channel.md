@@ -39,6 +39,12 @@ func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) (*Subscriber
 
 `bufSize` controls the internal channel buffer. A zero value means unbuffered (strict synchronous handoff). `Subscribe` blocks until the context is cancelled.
 
+```go
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error
+```
+
+`SubscribeWithReady` invokes `ready` once the channel is registered on the bus, then blocks. Bus registration is an in-process, mutex-guarded operation, so it is already complete when it returns -- `ready` exists to satisfy [`goflux.ReadySubscriber`](/guide/core-concepts#subscriber-readiness), letting callers sequence a publish after a subscribe without knowing the transport.
+
 `Close` is a no-op.
 
 ## Options
@@ -88,13 +94,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Subscribe in a goroutine -- Subscribe blocks until ctx is cancelled.
+	// Subscribe in a goroutine -- SubscribeWithReady blocks until ctx is
+	// cancelled, and signals once the channel is registered on the bus.
+	ready := make(chan struct{})
 	go func() {
-		_ = sub.Subscribe(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
+		_ = sub.SubscribeWithReady(ctx, "events.created", func(ctx context.Context, msg goflux.Message[Event]) error {
 			fmt.Printf("received: %s %s\n", msg.Payload.ID, msg.Payload.Name)
 			return nil
-		})
+		}, func() { close(ready) })
 	}()
+	<-ready
 
 	// Publish a message.
 	if err := pub.Publish(ctx, "events.created", Event{ID: "1", Name: "signup"}); err != nil {

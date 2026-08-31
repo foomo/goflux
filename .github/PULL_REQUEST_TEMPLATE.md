@@ -11,8 +11,9 @@
 - [ ] 💥 Breaking change
 - [ ] 📝 Documentation
 - [ ] ♻️ Refactoring
-- [ ] ⚡ Performance
+- [ ] 🏃‍➡️ Performance
 - [ ] ✅ Tests
+- [ ] 🔐 Security
 - [ ] 🔧 Build/CI
 
 ### Related Issues

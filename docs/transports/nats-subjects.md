@@ -148,21 +148,27 @@ func main() {
 	pub := gofluxnats.NewPublisher[OrderEvent](conn, codec.Encode)
 	sub := gofluxnats.NewSubscriber[OrderEvent](conn, codec.Decode)
 
+	readyOne, readyAll := make(chan struct{}), make(chan struct{})
+
 	// Subscribe to a single event.
 	go func() {
-		_ = sub.Subscribe(ctx, orderItemCreated.String(), func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
+		_ = sub.SubscribeWithReady(ctx, orderItemCreated.String(), func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
 			log.Printf("item created: %s", msg.Payload.OrderID)
 			return nil
-		})
+		}, func() { close(readyOne) })
 	}()
 
 	// Subscribe to all events under an entity.
 	go func() {
-		_ = sub.Subscribe(ctx, orderItem.All(), func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
+		_ = sub.SubscribeWithReady(ctx, orderItem.All(), func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
 			log.Printf("item event on %s: %s", msg.Subject, msg.Payload.OrderID)
 			return nil
-		})
+		}, func() { close(readyAll) })
 	}()
+
+	// Both subscriptions must reach the server before publishing.
+	<-readyOne
+	<-readyAll
 
 	// Publish.
 	_ = pub.Publish(ctx, orderItemCreated.String(), OrderEvent{OrderID: "42", Total: 99.95})

@@ -31,6 +31,12 @@ func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[
 
 `Subscribe` starts a consumption loop using the JetStream consumer's `Consume()` method, which works for both push and pull consumers. It blocks until the context is cancelled, then stops the consume context. Decode failures cause the message to be terminated (`msg.Term()`).
 
+```go
+func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error
+```
+
+`SubscribeWithReady` invokes `ready` once the consumer is established, then blocks. `jetstream.Consumer.Consume` sets up the pull consumer synchronously, so the subscription exists once it returns without error. JetStream also persists messages, so a publish that precedes the consumer is delivered rather than dropped -- `ready` is provided for uniformity with [`goflux.ReadySubscriber`](/guide/core-concepts#subscriber-readiness), not to close a message-loss window as it does on core NATS.
+
 `Close` is a no-op.
 
 ### Auto-ack (default)

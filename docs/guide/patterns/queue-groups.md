@@ -47,8 +47,13 @@ func main() {
 		return nil
 	}
 
-	go func() { _ = sub1.Subscribe(ctx, "tasks.>", handler) }()
-	go func() { _ = sub2.Subscribe(ctx, "tasks.>", handler) }()
+	// Wait for both subscriptions to reach the server. Tasks published before
+	// that are dropped by core NATS, silently.
+	ready1, ready2 := make(chan struct{}), make(chan struct{})
+	go func() { _ = sub1.SubscribeWithReady(ctx, "tasks.>", handler, func() { close(ready1) }) }()
+	go func() { _ = sub2.SubscribeWithReady(ctx, "tasks.>", handler, func() { close(ready2) }) }()
+	<-ready1
+	<-ready2
 
 	// Publish tasks — each one goes to exactly one worker.
 	pub := gofluxnats.NewPublisher[Task](conn, codec.Encode)

@@ -39,9 +39,29 @@ func NewResponder[Req, Resp any](
 	}
 }
 
-// Serve registers the handler for the given nats. The call blocks until
+// Serve registers the handler for the given subject. The call blocks until
 // ctx is cancelled.
+//
+// Serve does not report when the subscription reaches the server. A client that
+// issues a request immediately after Serve starts may find no responder
+// listening yet; core NATS drops the request silently and the requester fails
+// with a timeout. Use [Responder.ServeWithReady] to sequence the first request
+// after registration.
 func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handler goflux.RequestHandler[Req, Resp]) error {
+	return r.ServeWithReady(ctx, subject, handler, func() {})
+}
+
+// ServeWithReady behaves like [Responder.Serve] but invokes ready once the
+// server has acknowledged the subscription, then blocks until ctx is cancelled.
+//
+// ready is called at most once and never after ServeWithReady returns. If
+// registration fails, the error is returned without calling ready.
+func (r *Responder[Req, Resp]) ServeWithReady(
+	ctx context.Context,
+	subject string,
+	handler goflux.RequestHandler[Req, Resp],
+	ready func(),
+) error {
 	sub, err := r.conn.Subscribe(subject, func(msg *nats.Msg) {
 		var req Req
 		if err := r.reqCodec.Decode(msg.Data, &req); err != nil {
@@ -85,6 +105,16 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 	if err != nil {
 		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("nats: %w", err))
 	}
+
+	// See Subscriber.SubscribeWithReady: conn.Subscribe only buffers the SUB
+	// frame, so flush before declaring the responder ready.
+	if err := r.conn.Flush(); err != nil {
+		_ = sub.Unsubscribe()
+
+		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("nats: flush: %w", err))
+	}
+
+	ready()
 
 	<-ctx.Done()
 

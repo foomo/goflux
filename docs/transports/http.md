@@ -34,7 +34,12 @@ func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...Subscribe
 `Subscribe` registers a handler for `POST {basePath}/{subject}` on the subscriber's internal `*http.ServeMux`, then blocks until the context is cancelled. The subscriber exposes two ways to integrate with an HTTP server:
 
 - **`Subscribe`** -- registers the route and blocks. Use when running in a goroutine alongside the server.
+- **`SubscribeWithReady(ctx, subject, handler, ready)`** -- same, but invokes `ready` once the route is registered on the mux.
 - **`Handler(subject, handler)`** -- returns an `http.HandlerFunc` for the subject, allowing direct registration on an external mux.
+
+::: warning
+`ready` reports **mux registration only**. This Subscriber does not own a listener, so it cannot report that the HTTP server is accepting connections. Callers that need that must additionally synchronise on their own server startup.
+:::
 
 `Close` is a no-op. Shutdown is handled by the outer `http.Server`.
 
