@@ -131,28 +131,28 @@ Pipe adds span events and attributes to the existing transport span. No child sp
 
 ### Span Attributes
 
-| Attribute | Value | When |
-|-----------|-------|------|
-| `pipe.type` | `"forward"` / `"map"` / `"flatmap"` | Always |
-| `pipe.filtered` | `true` | Filter rejected message |
-| `pipe.items_published` | `int` | FlatMap only |
+| Attribute              | Value                               | When                    |
+| ---------------------- | ----------------------------------- | ----------------------- |
+| `pipe.type`            | `"forward"` / `"map"` / `"flatmap"` | Always                  |
+| `pipe.filtered`        | `true`                              | Filter rejected message |
+| `pipe.items_published` | `int`                               | FlatMap only            |
 
 ### Span Events
 
-| Event | Attributes | When |
-|-------|-----------|------|
-| `pipe.dead_letter` | `pipe.error` | Dead-letter observer called |
-| `pipe.publish_error` | `pipe.error` | Publish failed |
-| `pipe.map_error` | `pipe.error` | Map/FlatMap func failed |
+| Event                | Attributes   | When                        |
+| -------------------- | ------------ | --------------------------- |
+| `pipe.dead_letter`   | `pipe.error` | Dead-letter observer called |
+| `pipe.publish_error` | `pipe.error` | Publish failed              |
+| `pipe.map_error`     | `pipe.error` | Map/FlatMap func failed     |
 
 ## Error Semantics
 
-| Stage | On failure | Return value |
-|-------|-----------|--------------|
-| Filter | Rejects message | `nil` -- intentional skip, transport acks |
-| MapFunc | Transform fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
+| Stage       | On failure      | Return value                                                         |
+| ----------- | --------------- | -------------------------------------------------------------------- |
+| Filter      | Rejects message | `nil` -- intentional skip, transport acks                            |
+| MapFunc     | Transform fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
 | FlatMapFunc | Transform fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
-| Publish | Publish fails | `error` -- transport decides retry/nak. Dead-letter observer called. |
+| Publish     | Publish fails   | `error` -- transport decides retry/nak. Dead-letter observer called. |
 
 ## bridge.ToStream
 
@@ -230,17 +230,31 @@ for msg := range ch {
 ## RetryPublisher
 
 ```go
-func RetryPublisher[T any](pub Publisher[T], maxAttempts int, backoff BackoffFunc) Publisher[T]
+func RetryPublisher[T any](pub Publisher[T], maxAttempts int, backoff BackoffFunc, opts ...RetryPublisherOption) Publisher[T]
 
 type BackoffFunc func(attempt int) time.Duration
+type RetryableFunc func(err error) bool
 ```
 
-Wraps a `Publisher[T]` with retry logic. On publish failure, retries up to `maxAttempts` times with delays determined by `backoff`. Context cancellation aborts the retry loop immediately. If all attempts fail, the last error is returned.
+Wraps a `Publisher[T]` with retry logic. On publish failure, retries until `maxAttempts` publish calls have been made, with delays determined by `backoff`. Context cancellation aborts the retry loop immediately. If all attempts fail, the last error is returned.
 
 ```go
 retrying := goflux.RetryPublisher[Event](pub, 3, func(attempt int) time.Duration {
-    return time.Duration(attempt+1) * time.Second // 1s, 2s, 3s
+    return time.Duration(attempt+1) * time.Second // 1s, 2s
 })
 
 err := retrying.Publish(ctx, "events.order", event)
+```
+
+### Limiting which errors are retried
+
+By default every publish error is retried. `WithRetryable` restricts retries to the errors for which the predicate returns `true` — all other errors are returned immediately, without backoff.
+
+```go
+retrying := goflux.RetryPublisher[Event](pub, 3, backoff,
+    goflux.WithRetryable(func(err error) bool {
+        // Retry transport hiccups, give up on encoding problems.
+        return errors.Is(err, goflux.ErrTransport)
+    }),
+)
 ```
