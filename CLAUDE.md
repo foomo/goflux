@@ -96,7 +96,7 @@ Handler factories that compose `Handler[T]` and `Publisher[T]`:
   established (uses `SubscribeWithReady` internally), so `bridge.ToStream` inherits the same guarantee
 - `bridge.ToStream[T]` / `bridge.FromStream[T]` (`bridge/` submodule) — bridge to/from `goflow.Stream[Message[T]]`
 - `Bind[T]` — fixed-subject publisher wrapper
-- `RetryPublisher[T]` — publish retry with backoff
+- `RetryPublisher[T]` — publish retry with backoff; `WithRetryable` limits retries to selected errors
 
 Stream-processing operators (fan-out, fan-in, round-robin, filter, map, distinct, skip, take, throttle, peek) are
 provided by `github.com/foomo/goflow` — use `bridge.ToStream` to bridge.

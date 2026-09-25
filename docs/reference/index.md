@@ -207,7 +207,7 @@ See [Middleware](/middleware/) for details and examples.
 | `ToChan[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `<-chan Message[T]` |
 | `bridge.ToStream[T](ctx, sub, subject, bufSize)` | Bridge subscriber to `goflow.Stream[Message[T]]` |
 | `bridge.FromStream[T](stream, pub)` | Consume goflow stream and publish each message |
-| `RetryPublisher[T](pub, maxAttempts, backoff)` | Wrap publisher with retry logic |
+| `RetryPublisher[T](pub, maxAttempts, backoff, opts...)` | Wrap publisher with retry logic |
 
 ### Pipe Options
 
@@ -251,17 +251,30 @@ err := g.Run(ctx) // blocks, fail-fast on first error
 ## RetryPublisher
 
 ```go
-func RetryPublisher[T any](pub Publisher[T], maxAttempts int, backoff BackoffFunc) Publisher[T]
+func RetryPublisher[T any](pub Publisher[T], maxAttempts int, backoff BackoffFunc, opts ...RetryPublisherOption) Publisher[T]
 
 type BackoffFunc func(attempt int) time.Duration
+type RetryableFunc func(err error) bool
 ```
 
-Wraps a `Publisher[T]` with retry logic. On publish failure, retries up to `maxAttempts` times with delays from `backoff`. Context cancellation aborts immediately.
+Wraps a `Publisher[T]` with retry logic. On publish failure, retries until `maxAttempts` publish calls have been made, with delays from `backoff`. Context cancellation aborts immediately.
 
 ```go
 pub := goflux.RetryPublisher[Event](innerPub, 3, func(attempt int) time.Duration {
     return time.Duration(attempt+1) * time.Second // linear backoff
 })
+```
+
+| Option | Description |
+|--------|-------------|
+| `WithRetryable(fn)` | Retry only the errors for which `fn` returns true (default: retry all) |
+
+```go
+pub := goflux.RetryPublisher[Event](innerPub, 3, backoff,
+    goflux.WithRetryable(func(err error) bool {
+        return errors.Is(err, goflux.ErrTransport)
+    }),
+)
 ```
 
 ## Sentinel Errors
