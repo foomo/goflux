@@ -5,16 +5,16 @@ minimum_release_age = "3d"
 
 [tools]
 # https://mise-tools.jdx.dev/tools/bun
-bun = "1.4.0"
+bun = "1.4.2"
 # https://mise-tools.jdx.dev/tools/actionlint
 actionlint = "1.7.12"
 # https://mise-tools.jdx.dev/tools/lefthook
-lefthook = "2.1.11"
+lefthook = "2.1.14"
 # https://mise-tools.jdx.dev/tools/golangci-lint
-golangci-lint = "2.13.1"
+golangci-lint = "2.14.0"
 # https://mise-tools.jdx.dev/tools/goreleaser
-goreleaser = "2.18.0"
+goreleaser = "2.18.2"
 # https://github.com/oligot/go-mod-upgrade/releases
 "github:oligot/go-mod-upgrade" = "0.12.0"
 # https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck?tab=versions
-"go:golang.org/x/vuln/cmd/govulncheck" = "1.7.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.8.0"

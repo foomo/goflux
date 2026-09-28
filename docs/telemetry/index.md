@@ -17,6 +17,7 @@ Creates a `Telemetry` instance that holds an OTel tracer, meter, and propagator.
 | `WithTracerProvider(tp)` | `otel.GetTracerProvider()` | Sets the tracer provider |
 | `WithMeterProvider(mp)` | `otel.GetMeterProvider()` | Sets the meter provider |
 | `WithPropagator(p)` | `otel.GetTextMapPropagator()` | Sets the text-map propagator |
+| `WithDestinationTemplate(fn)` | none | Maps subjects to low-cardinality templates for metrics, see [Metric Cardinality](#metric-cardinality) |
 
 ```go
 tel, err := goflux.NewTelemetry(
@@ -76,14 +77,38 @@ All metrics follow OpenTelemetry messaging semantic conventions.
 
 | Metric | Kind | Description |
 |--------|------|-------------|
-| `goflux.client.sent.messages` | Counter | Messages published |
-| `goflux.client.consumed.messages` | Counter | Messages consumed |
-| `goflux.client.operation.duration` | Histogram | Publish operation duration (ms) |
-| `goflux.process.duration` | Histogram | Handler processing duration (ms) |
+| `messaging.client.sent.messages` | Counter | Messages published or requested |
+| `messaging.client.consumed.messages` | Counter | Messages consumed or fetched |
+| `messaging.client.operation.duration` | Histogram | Publish and request duration (s) |
+| `messaging.process.duration` | Histogram | Handler processing and fetch duration (s) |
 | `goflux.consumer.lag` | Observable Gauge | Messages waiting in subscriber buffer |
 | `goflux.processor.ack.outcome` | Counter | Ack / nak / nak_with_delay / term outcomes per subject |
 
-Each metric carries `messaging.destination.name` (subject) and `error.type` attributes.
+Each metric carries `messaging.destination.name` (subject) and `error.type` attributes. With `WithDestinationTemplate`, the send, consume and duration metrics can carry `messaging.destination.template` instead of `messaging.destination.name`.
+
+## Metric Cardinality {#metric-cardinality}
+
+Every distinct subject on a metric creates its own time series. Subjects that embed unbounded values, such as `orders.<id>.created`, therefore create one series per ID.
+
+Consumer metrics record the subject passed to `Subscribe`, not each message's subject. A single wildcard subscription such as `orders.*.created` produces one series. Publishers only have the concrete subject, so use `WithDestinationTemplate` to map it to a template:
+
+```go
+tel, err := goflux.NewTelemetry(
+    goflux.WithDestinationTemplate(func(subject string) string {
+        parts := strings.Split(subject, ".")
+        if len(parts) == 3 && parts[0] == "orders" {
+            return "orders.*." + parts[2]
+        }
+        return "" // keep the concrete subject
+    }),
+)
+```
+
+- A non-empty result is recorded as `messaging.destination.template` in place of `messaging.destination.name`, never both.
+- An empty result keeps `messaging.destination.name` for that call.
+- Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch` and `RecordRequest`. `goflux.consumer.lag` and `goflux.processor.ack.outcome` still record the concrete subject.
+- Spans always record the concrete subject.
+- `fn` runs on every recorded operation and must be cheap and safe for concurrent use.
 
 ## Span Attributes
 

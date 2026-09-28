@@ -1,12 +1,12 @@
 module github.com/foomo/goflux/bridge
 
-go 1.26.0
+go 1.27.0
 
 replace github.com/foomo/goflux => ../
 
 require (
 	github.com/foomo/goflow v0.2.2
-	github.com/foomo/goflux v0.6.0
+	github.com/foomo/goflux v0.8.0
 )
 
 require (

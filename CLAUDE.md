@@ -113,12 +113,15 @@ middleware lives in `github.com/foomo/goflux/middleware`:
 
 ### Telemetry
 
-OTel is built into transports, not added as middleware. Package-level singleton initialized via `sync.Once` against OTel
-globals.
+OTel is built into transports, not added as middleware. Each transport holds a `*Telemetry` instance: `NewTelemetry(opts...)`
+reads OTel globals unless overridden by `WithTracerProvider` / `WithMeterProvider` / `WithPropagator`;
+`DefaultTelemetry(tel)` falls back to it (then to `NewNoopTelemetry()`) when a transport is given nil.
 
 - Transports call `RecordPublish()` / `RecordProcess()` directly
-- All metrics follow `messaging.*` semconv naming
-- `ResetForTest()` resets the singleton for test isolation
+- Metrics follow `messaging.*` semconv naming; goflux-specific ones use `goflux.*`
+- Tests isolate by passing their own providers via `WithTracerProvider` / `WithMeterProvider`
+- `WithDestinationTemplate(fn)` maps subjects to `messaging.destination.template` on metrics only, to bound cardinality;
+  spans keep the concrete subject
 - New transports must call `RecordPublish`/`RecordProcess` and declare a `system` var
 
 ### Context Propagation
