@@ -330,6 +330,7 @@ See [Stream Processing](/guide/patterns/stream-processor) for details and exampl
 | `WithTracerProvider(tp)` | Set tracer provider |
 | `WithMeterProvider(mp)` | Set meter provider |
 | `WithPropagator(p)` | Set text-map propagator |
+| `WithDestinationTemplate(fn)` | Map subjects to metric templates to bound cardinality |
 | `RecordPublish(ctx, subject, system, fn)` | Producer span |
 | `RecordProcess(ctx, subject, system, fn, opts...)` | Consumer span |
 | `RecordFetch(ctx, subject, system, count, fn)` | Consumer span (pull fetch) |

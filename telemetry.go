@@ -39,6 +39,10 @@ type Telemetry struct {
 
 	// goflux-specific metrics
 	ackOutcome gofluxconv.AckOutcome // goflux.processor.ack.outcome
+
+	// destinationTemplate maps a subject to its metric template; nil records
+	// the concrete subject.
+	destinationTemplate func(subject string) string
 }
 
 // ---------------------------------------------------------------------------
@@ -46,9 +50,10 @@ type Telemetry struct {
 // ---------------------------------------------------------------------------
 
 type telemetryConfig struct {
-	tp         trace.TracerProvider
-	mp         metric.MeterProvider
-	propagator propagation.TextMapPropagator
+	tp                  trace.TracerProvider
+	mp                  metric.MeterProvider
+	propagator          propagation.TextMapPropagator
+	destinationTemplate func(subject string) string
 }
 
 // TelemetryOption configures a [Telemetry] instance.
@@ -67,6 +72,22 @@ func WithMeterProvider(mp metric.MeterProvider) TelemetryOption {
 // WithPropagator sets the text-map propagator. Defaults to [otel.GetTextMapPropagator].
 func WithPropagator(p propagation.TextMapPropagator) TelemetryOption {
 	return func(c *telemetryConfig) { c.propagator = p }
+}
+
+// WithDestinationTemplate sets fn to map a concrete subject to a
+// low-cardinality template for metrics, e.g. "orders.1234.created" to
+// "orders.*.created". Use it when subjects embed unbounded values such as
+// IDs, which would otherwise create one metric series per value.
+//
+// fn is called on every [Telemetry.RecordPublish], [Telemetry.RecordProcess],
+// [Telemetry.RecordFetch] and [Telemetry.RecordRequest]. A non-empty result
+// is recorded as messaging.destination.template in place of
+// messaging.destination.name; an empty result keeps the concrete subject.
+// Spans always record the concrete subject.
+//
+// fn must be safe for concurrent use.
+func WithDestinationTemplate(fn func(subject string) string) TelemetryOption {
+	return func(c *telemetryConfig) { c.destinationTemplate = fn }
 }
 
 // DefaultTelemetry returns tel if non-nil, otherwise creates a new Telemetry
@@ -128,9 +149,10 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 
 	m := cfg.mp.Meter(instrName)
 	t := &Telemetry{
-		tracer:     cfg.tp.Tracer(instrName),
-		propagator: cfg.propagator,
-		mp:         cfg.mp,
+		tracer:              cfg.tp.Tracer(instrName),
+		propagator:          cfg.propagator,
+		mp:                  cfg.mp,
+		destinationTemplate: cfg.destinationTemplate,
 	}
 
 	var err error
@@ -194,13 +216,13 @@ func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system se
 	t.sentMessages.Add(ctx, 1,
 		opName,
 		system,
-		t.sentMessages.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.sentMessages.AttrDestinationName, t.sentMessages.AttrDestinationTemplate),
 		t.sentMessages.AttrErrorType(errType),
 	)
 	t.publishDuration.Record(ctx, s,
 		opName,
 		system,
-		t.publishDuration.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.publishDuration.AttrDestinationName, t.publishDuration.AttrDestinationTemplate),
 		t.publishDuration.AttrErrorType(errType),
 	)
 	recordSpanResult(span, err)
@@ -262,13 +284,13 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 	t.consumedMessages.Add(ctx, 1,
 		"receive",
 		system,
-		t.consumedMessages.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.consumedMessages.AttrDestinationName, t.consumedMessages.AttrDestinationTemplate),
 		t.consumedMessages.AttrErrorType(errType),
 	)
 	t.processDuration.Record(ctx, s,
 		"process",
 		system,
-		t.processDuration.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.processDuration.AttrDestinationName, t.processDuration.AttrDestinationTemplate),
 		t.processDuration.AttrErrorType(errType),
 	)
 	recordSpanResult(span, err)
@@ -304,13 +326,13 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 	t.consumedMessages.Add(ctx, int64(count),
 		"receive",
 		system,
-		t.consumedMessages.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.consumedMessages.AttrDestinationName, t.consumedMessages.AttrDestinationTemplate),
 		t.consumedMessages.AttrErrorType(errType),
 	)
 	t.processDuration.Record(ctx, s,
 		"process",
 		system,
-		t.processDuration.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.processDuration.AttrDestinationName, t.processDuration.AttrDestinationTemplate),
 		t.processDuration.AttrErrorType(errType),
 	)
 	recordSpanResult(span, err)
@@ -345,13 +367,13 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 	t.sentMessages.Add(ctx, 1,
 		opName,
 		system,
-		t.sentMessages.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.sentMessages.AttrDestinationName, t.sentMessages.AttrDestinationTemplate),
 		t.sentMessages.AttrErrorType(errType),
 	)
 	t.publishDuration.Record(ctx, s,
 		opName,
 		system,
-		t.publishDuration.AttrDestinationName(subject),
+		t.destinationAttr(subject, t.publishDuration.AttrDestinationName, t.publishDuration.AttrDestinationTemplate),
 		t.publishDuration.AttrErrorType(errType),
 	)
 	recordSpanResult(span, err)
@@ -405,6 +427,18 @@ func (t *Telemetry) ExtractSpanContext(ctx context.Context, carrier propagation.
 
 func secondsSince(start time.Time) float64 {
 	return time.Since(start).Seconds()
+}
+
+// destinationAttr returns the template attribute if one is derived for
+// subject, else the name attribute. Never both, or cardinality stays unbounded.
+func (t *Telemetry) destinationAttr(subject string, nameAttr, templateAttr func(string) attribute.KeyValue) attribute.KeyValue {
+	if t.destinationTemplate != nil {
+		if tmpl := t.destinationTemplate(subject); tmpl != "" {
+			return templateAttr(tmpl)
+		}
+	}
+
+	return nameAttr(subject)
 }
 
 func errorType(err error) semconvmsg.ErrorTypeAttr {
