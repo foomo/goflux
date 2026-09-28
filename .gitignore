@@ -1,39 +1,39 @@
 .*
-*.zip
-*.tar
-*.tgz
-*.pem
-*.out
+*.lock
 *.log
+*.pid
+*.retry
+*.tar
+*.gz
+*.out
+*.tgz
+*.zip
+*.key
+*.pem
+*.prof
+*.pprof
+*.profile
 bin/
 dist/
+vendor/
 tmp/
+
+## GitHub
+!.github/
+
+## Editorconfig
+!.editorconfig
 
 ## Git
 !.gitignore
 !.gitattributes
 !.gitkeep
 
-## GitHub
-!.github/
-
-## Mise
-!.mise.toml
-
 ## Lefthook
 !.lefthook.yaml
 
-## VSCode
-!.vscode/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.default.json
-
-## Editorconfig
-!.editorconfig
-
-## Docker
-!.dockerignore
+## Mise
+!.mise.toml
 
 ## TypeScript
 *.tsbuildinfo
@@ -45,7 +45,6 @@ tmp/
 !.goreleaser.yaml
 
 ## Node
-!.npmrc
 **/node_modules/
 
 ## Vitepress
