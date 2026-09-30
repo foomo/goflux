@@ -75,15 +75,17 @@ func WithPropagator(p propagation.TextMapPropagator) TelemetryOption {
 }
 
 // WithDestinationTemplate sets fn to map a concrete subject to a
-// low-cardinality template for metrics, e.g. "orders.1234.created" to
-// "orders.*.created". Use it when subjects embed unbounded values such as
-// IDs, which would otherwise create one metric series per value.
+// low-cardinality template for span names and metrics, e.g.
+// "orders.1234.created" to "orders.*.created". Use it when subjects embed
+// unbounded values such as IDs, which would otherwise create one metric
+// series per value.
 //
 // fn is called on every [Telemetry.RecordPublish], [Telemetry.RecordProcess],
 // [Telemetry.RecordFetch] and [Telemetry.RecordRequest]. A non-empty result
-// is recorded as messaging.destination.template in place of
-// messaging.destination.name; an empty result keeps the concrete subject.
-// Spans always record the concrete subject.
+// replaces the subject in the span name and is recorded as
+// messaging.destination.template alongside messaging.destination.name, which
+// always carries the concrete subject. An empty result keeps the concrete
+// subject in both the span name and messaging.destination.name.
 //
 // fn must be safe for concurrent use.
 func WithDestinationTemplate(fn func(subject string) string) TelemetryOption {
