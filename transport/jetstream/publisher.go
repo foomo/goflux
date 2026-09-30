@@ -13,18 +13,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Publisher publishes encoded messages to a JetStream stream.
 type Publisher[T any] struct {
 	js      jetstream.JetStream
 	encoder goencode.Encoder[T, []byte]
 	tel     *goflux.Telemetry
 }
 
+// NewPublisher returns a Publisher that publishes via js, encoding each
+// value with encoder. subject must map to a stream configured to accept it,
+// e.g. via [DefaultStreamConfig] or [WorkQueueStreamConfig].
 func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
 	return &Publisher[T]{js: js, encoder: encoder, tel: cfg.tel}
 }
 
+// Publish encodes v and publishes it to subject, waiting for the stream to
+// persist the message before returning.
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
 		b, err := p.encoder(v)

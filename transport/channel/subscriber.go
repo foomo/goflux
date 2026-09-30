@@ -9,6 +9,7 @@ import (
 	"github.com/foomo/goflux"
 )
 
+// Subscriber subscribes to messages published onto a [Bus].
 type Subscriber[T any] struct {
 	bus     *Bus[T]
 	bufSize int
@@ -17,6 +18,8 @@ type Subscriber[T any] struct {
 	ch      chan goflux.Message[T]
 }
 
+// NewSubscriber returns a Subscriber that reads from bus, buffering up to
+// bufSize messages before Subscribe applies backpressure.
 func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) (*Subscriber[T], error) {
 	cfg := applyOpts(opts)
 
@@ -28,6 +31,8 @@ func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) (*Subscriber
 	return s, nil
 }
 
+// Len reports the number of messages currently buffered, or 0 if no
+// subscription is active.
 func (s *Subscriber[T]) Len() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -39,6 +44,8 @@ func (s *Subscriber[T]) Len() int64 {
 	return int64(len(s.ch))
 }
 
+// Subscribe registers handler for subject. The call blocks until ctx is
+// cancelled.
 func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler goflux.Handler[T]) error {
 	return s.SubscribeWithReady(ctx, subject, handler, func() {})
 }
@@ -84,4 +91,5 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 	}
 }
 
+// Close is a no-op; the caller owns the Bus.
 func (s *Subscriber[T]) Close() error { return nil }

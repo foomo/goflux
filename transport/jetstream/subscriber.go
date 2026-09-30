@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Subscriber decodes and dispatches messages pulled from a JetStream
+// consumer, with at-least-once delivery via ack/nak/term.
 type Subscriber[T any] struct {
 	consumer  jetstream.Consumer
 	decoder   goencode.Decoder[T, []byte]
@@ -20,6 +22,10 @@ type Subscriber[T any] struct {
 	manualAck bool
 }
 
+// NewSubscriber returns a Subscriber that pulls from consumer, decoding each
+// message with decoder. By default the handler's error decides ack/nak; pass
+// [WithManualAck] to ack/nak from within the handler via [goflux.Message.Ack]
+// and friends.
 func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 

@@ -12,18 +12,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Publisher publishes encoded messages over NATS core.
 type Publisher[T any] struct {
 	conn    *nats.Conn
 	encoder goencode.Encoder[T, []byte]
 	tel     *goflux.Telemetry
 }
 
+// NewPublisher returns a Publisher that publishes over conn, encoding each
+// value with encoder.
 func NewPublisher[T any](conn *nats.Conn, encoder goencode.Encoder[T, []byte], opts ...Option) *Publisher[T] {
 	cfg := applyOpts(opts)
 
 	return &Publisher[T]{conn: conn, encoder: encoder, tel: cfg.tel}
 }
 
+// Publish encodes v and publishes it to subject. NATS core delivery is
+// fire-and-forget: a nil error only means the message was handed to the
+// client library, not that any subscriber received it.
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
 		b, err := p.encoder(v)
