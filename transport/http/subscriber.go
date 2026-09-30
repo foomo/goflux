@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	// DefaultBasePath is the base path used when [WithBasePath] is not given:
+	// routes are registered directly under "/{subject}".
 	DefaultBasePath string = ""
 	// DefaultMaxBodySize is the maximum request body size the subscriber will
 	// read. Override per-subscriber via the WithMaxBodySize option.
@@ -83,6 +85,8 @@ func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...Subscribe
 	}
 }
 
+// Mux returns the *http.ServeMux that routes registered via Subscribe are
+// mounted on. Pass it to an http.Server, or mount it under a larger mux.
 func (s *Subscriber[T]) Mux() *http.ServeMux {
 	return s.mux
 }

@@ -292,6 +292,75 @@ func TestWithDestinationTemplate_NonMatchingSubjectKeepsConcreteName(t *testing.
 	assert.True(t, found, "expected orders.created to keep its concrete destination name")
 }
 
+// TestWithDestinationTemplate_SpanNameAndAttrs checks that publish and process
+// spans for a per-round-style subject get a templated span name, plus both
+// messaging.destination.name (concrete) and messaging.destination.template
+// attributes.
+func TestWithDestinationTemplate_SpanNameAndAttrs(t *testing.T) {
+	spanExporter := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spanExporter))
+
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(
+		goflux.WithTracerProvider(tp),
+		goflux.WithDestinationTemplate(orderTemplate),
+	)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	subject := "orders.id-1001.created"
+
+	require.NoError(t, tel.RecordPublish(ctx, subject, "test", func(context.Context) error { return nil }))
+	require.NoError(t, tel.RecordProcess(ctx, subject, "test", func(context.Context) error { return nil }))
+
+	spans := spanExporter.GetSpans()
+	require.Len(t, spans, 2)
+
+	expectedNames := map[string]string{
+		trace.SpanKindProducer.String(): "send orders.*.created",
+		trace.SpanKindConsumer.String(): "process orders.*.created",
+	}
+
+	for _, span := range spans {
+		assert.NotContains(t, span.Name, "id-1001", "span name must not contain the concrete round id")
+		assert.Equal(t, expectedNames[span.SpanKind.String()], span.Name)
+
+		attrs := make(map[string]string)
+		for _, attr := range span.Attributes {
+			attrs[string(attr.Key)] = attr.Value.AsString()
+		}
+
+		assert.Equal(t, subject, attrs["messaging.destination.name"], "span must keep the concrete subject")
+		assert.Equal(t, "orders.*.created", attrs["messaging.destination.template"])
+	}
+}
+
+// TestWithoutDestinationTemplate_SpanNameUnchanged checks that with no
+// template configured, span names stay concrete and no template attribute
+// is added.
+func TestWithoutDestinationTemplate_SpanNameUnchanged(t *testing.T) {
+	tel, spanExporter, _ := setupTelemetry(t)
+
+	ctx := context.Background()
+	subject := "orders.id-1001.created"
+
+	require.NoError(t, tel.RecordPublish(ctx, subject, "test", func(context.Context) error { return nil }))
+	require.NoError(t, tel.RecordProcess(ctx, subject, "test", func(context.Context) error { return nil }))
+
+	spans := spanExporter.GetSpans()
+	require.Len(t, spans, 2)
+
+	for _, span := range spans {
+		for _, attr := range span.Attributes {
+			assert.NotEqual(t, "messaging.destination.template", string(attr.Key), "no template attribute expected without WithDestinationTemplate")
+		}
+	}
+
+	assert.ElementsMatch(t, []string{"send " + subject, "process " + subject},
+		[]string{spans[0].Name, spans[1].Name})
+}
+
 // dataPointAttrFingerprints returns one deterministic string per data point,
 // built from its attribute set, so two data points can be compared for
 // attribute-set equality without depending on metricdata's internal types.

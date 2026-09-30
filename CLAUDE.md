@@ -120,8 +120,8 @@ reads OTel globals unless overridden by `WithTracerProvider` / `WithMeterProvide
 - Transports call `RecordPublish()` / `RecordProcess()` directly
 - Metrics follow `messaging.*` semconv naming; goflux-specific ones use `goflux.*`
 - Tests isolate by passing their own providers via `WithTracerProvider` / `WithMeterProvider`
-- `WithDestinationTemplate(fn)` maps subjects to `messaging.destination.template` on metrics only, to bound cardinality;
-  spans keep the concrete subject
+- `WithDestinationTemplate(fn)` maps subjects to `messaging.destination.template` on metrics and span names, to bound
+  cardinality; span attributes always keep `messaging.destination.name` (the concrete subject) alongside it
 - New transports must call `RecordPublish`/`RecordProcess` and declare a `system` var
 
 ### Context Propagation

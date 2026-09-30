@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Subscriber decodes and dispatches messages received over NATS core.
 type Subscriber[T any] struct {
 	conn       *nats.Conn
 	decoder    goencode.Decoder[T, []byte]
@@ -20,6 +21,8 @@ type Subscriber[T any] struct {
 	queueGroup string
 }
 
+// NewSubscriber returns a Subscriber that consumes from conn, decoding each
+// message with decoder. Use [WithQueueGroup] to join a queue group.
 func NewSubscriber[T any](conn *nats.Conn, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T] {
 	cfg := applyOpts(opts)
 

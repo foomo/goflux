@@ -17,7 +17,7 @@ Creates a `Telemetry` instance that holds an OTel tracer, meter, and propagator.
 | `WithTracerProvider(tp)` | `otel.GetTracerProvider()` | Sets the tracer provider |
 | `WithMeterProvider(mp)` | `otel.GetMeterProvider()` | Sets the meter provider |
 | `WithPropagator(p)` | `otel.GetTextMapPropagator()` | Sets the text-map propagator |
-| `WithDestinationTemplate(fn)` | none | Maps subjects to low-cardinality templates for metrics, see [Metric Cardinality](#metric-cardinality) |
+| `WithDestinationTemplate(fn)` | none | Maps subjects to low-cardinality templates for span names and metrics, see [Metric Cardinality](#metric-cardinality) |
 
 ```go
 tel, err := goflux.NewTelemetry(
@@ -37,7 +37,7 @@ if err != nil {
 func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
 ```
 
-Opens a **producer** span named `send <subject>` (`SpanKindProducer`), executes `fn`, then records duration and sent-message counter. The `system` attribute identifies the transport (e.g. `"nats"`, `"http"`).
+Opens a **producer** span named `send <subject>` (or `send <template>` when a destination template is derived, `SpanKindProducer`), executes `fn`, then records duration and sent-message counter. The `system` attribute identifies the transport (e.g. `"nats"`, `"http"`).
 
 ### RecordProcess
 
@@ -45,7 +45,7 @@ Opens a **producer** span named `send <subject>` (`SpanKindProducer`), executes 
 func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error, opts ...ProcessOption) error
 ```
 
-Opens a **consumer** span named `process <subject>` (`SpanKindConsumer`), executes `fn`, then records duration and consumed-message counter. Pass `WithRemoteSpanContext` to attach the producer span as a link for async transports.
+Opens a **consumer** span named `process <subject>` (or `process <template>` when a destination template is derived, `SpanKindConsumer`), executes `fn`, then records duration and consumed-message counter. Pass `WithRemoteSpanContext` to attach the producer span as a link for async transports.
 
 ### RecordFetch
 
@@ -53,7 +53,7 @@ Opens a **consumer** span named `process <subject>` (`SpanKindConsumer`), execut
 func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system SystemAttr, count int, fn func(context.Context) error) error
 ```
 
-Opens a **consumer** span named `receive <subject>` (`SpanKindConsumer`) for pull-based fetch operations. Records the batch message count alongside the standard duration and counter metrics.
+Opens a **consumer** span named `receive <subject>` (or `receive <template>` when a destination template is derived, `SpanKindConsumer`) for pull-based fetch operations. Records the batch message count alongside the standard duration and counter metrics.
 
 ### RecordRequest
 
@@ -61,7 +61,7 @@ Opens a **consumer** span named `receive <subject>` (`SpanKindConsumer`) for pul
 func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
 ```
 
-Opens a **client** span named `send <subject>` (`SpanKindClient`) for request-reply calls. Records duration and sent-message counter.
+Opens a **client** span named `send <subject>` (or `send <template>` when a destination template is derived, `SpanKindClient`) for request-reply calls. Records duration and sent-message counter.
 
 ### RegisterLag
 
@@ -107,17 +107,18 @@ tel, err := goflux.NewTelemetry(
 - A non-empty result is recorded as `messaging.destination.template` in place of `messaging.destination.name`, never both.
 - An empty result keeps `messaging.destination.name` for that call.
 - Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch` and `RecordRequest`. `goflux.consumer.lag` and `goflux.processor.ack.outcome` still record the concrete subject.
-- Spans always record the concrete subject.
+- Also applies to span names: the same template replaces the subject in `{operation} {subject}` when one is derived. Span attributes always keep `messaging.destination.name` (the concrete subject) and additionally set `messaging.destination.template` when a template is derived — never dropping the concrete name.
 - `fn` runs on every recorded operation and must be cheap and safe for concurrent use.
 
 ## Span Attributes
 
-Spans follow OpenTelemetry messaging semantic conventions and are named `{operation} {subject}` — e.g. `send orders.created`, `process orders.created`, `receive orders.created`. The following attributes are set:
+Spans follow OpenTelemetry messaging semantic conventions and are named `{operation} {subject}` — e.g. `send orders.created`, `process orders.created`, `receive orders.created` — or `{operation} {template}` when `WithDestinationTemplate` derives one, e.g. `send orders.*.created`. The following attributes are set:
 
 | Attribute | Where | Notes |
 |-----------|-------|-------|
 | `messaging.system` | all spans | Transport id (`nats`, `nats-jetstream`, `http`, `go_channel`) |
-| `messaging.destination.name` | all spans | Subject |
+| `messaging.destination.name` | all spans | Subject, always the concrete value |
+| `messaging.destination.template` | when a destination template is derived | Low-cardinality template; set alongside, not instead of, `messaging.destination.name` |
 | `messaging.operation.name` | all spans | `send` / `process` / `receive` |
 | `messaging.operation.type` | transport publish & process spans | `send` / `process` |
 | `messaging.message.body.size` | transport spans | Encoded payload size (bytes) |
