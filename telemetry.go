@@ -193,16 +193,15 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system semconvmsg.SystemAttr, fn func(context.Context) error) error {
 	const opName = "send"
 
-	attrs := []attribute.KeyValue{
-		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
+	attrs := append([]attribute.KeyValue{
 		msgsemconv.MessagingSystemKey.String(string(system)),
 		msgsemconv.MessagingOperationName(opName),
-	}
+	}, t.destinationSpanAttrs(subject)...)
 	if id := MessageID(ctx); id != "" {
 		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
+	ctx, span := t.tracer.Start(ctx, t.spanName(opName, subject),
 		trace.WithSpanKind(trace.SpanKindProducer),
 		trace.WithAttributes(attrs...),
 	)
@@ -256,11 +255,10 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 
 	const opName = "process"
 
-	attrs := []attribute.KeyValue{
-		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
+	attrs := append([]attribute.KeyValue{
 		msgsemconv.MessagingSystemKey.String(string(system)),
 		msgsemconv.MessagingOperationName(opName),
-	}
+	}, t.destinationSpanAttrs(subject)...)
 	if id := MessageID(ctx); id != "" {
 		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
@@ -273,7 +271,7 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		startOpts = append(startOpts, trace.WithLinks(trace.Link{SpanContext: cfg.linkedSpanCtx}))
 	}
 
-	ctx, span := t.tracer.Start(ctx, opName+" "+subject, startOpts...)
+	ctx, span := t.tracer.Start(ctx, t.spanName(opName, subject), startOpts...)
 	defer span.End()
 
 	start := time.Now()
@@ -302,17 +300,16 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semconvmsg.SystemAttr, count int, fn func(context.Context) error) error {
 	const opName = "receive"
 
-	attrs := []attribute.KeyValue{
-		semconvmsg.ClientConsumedMessages{}.AttrDestinationName(subject),
+	attrs := append([]attribute.KeyValue{
 		msgsemconv.MessagingSystemKey.String(string(system)),
 		msgsemconv.MessagingOperationName(opName),
 		attribute.Int("messaging.batch.message_count", count),
-	}
+	}, t.destinationSpanAttrs(subject)...)
 	if id := MessageID(ctx); id != "" {
 		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
+	ctx, span := t.tracer.Start(ctx, t.spanName(opName, subject),
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(attrs...),
 	)
@@ -344,16 +341,15 @@ func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system semc
 func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system semconvmsg.SystemAttr, fn func(context.Context) error) error {
 	const opName = "send"
 
-	attrs := []attribute.KeyValue{
-		semconvmsg.ClientSentMessages{}.AttrDestinationName(subject),
+	attrs := append([]attribute.KeyValue{
 		msgsemconv.MessagingSystemKey.String(string(system)),
 		msgsemconv.MessagingOperationName(opName),
-	}
+	}, t.destinationSpanAttrs(subject)...)
 	if id := MessageID(ctx); id != "" {
 		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
 	}
 
-	ctx, span := t.tracer.Start(ctx, opName+" "+subject,
+	ctx, span := t.tracer.Start(ctx, t.spanName(opName, subject),
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(attrs...),
 	)
@@ -432,13 +428,45 @@ func secondsSince(start time.Time) float64 {
 // destinationAttr returns the template attribute if one is derived for
 // subject, else the name attribute. Never both, or cardinality stays unbounded.
 func (t *Telemetry) destinationAttr(subject string, nameAttr, templateAttr func(string) attribute.KeyValue) attribute.KeyValue {
-	if t.destinationTemplate != nil {
-		if tmpl := t.destinationTemplate(subject); tmpl != "" {
-			return templateAttr(tmpl)
-		}
+	if tmpl := t.template(subject); tmpl != "" {
+		return templateAttr(tmpl)
 	}
 
 	return nameAttr(subject)
+}
+
+// template returns the low-cardinality template for subject, or "" if none
+// is configured or derived. Shared by span naming and metric attributes so
+// they cannot drift apart.
+func (t *Telemetry) template(subject string) string {
+	if t.destinationTemplate == nil {
+		return ""
+	}
+
+	return t.destinationTemplate(subject)
+}
+
+// spanName builds a low-cardinality span name: opName + the destination
+// template when one is derived for subject, else opName + subject unchanged.
+func (t *Telemetry) spanName(opName, subject string) string {
+	if tmpl := t.template(subject); tmpl != "" {
+		return opName + " " + tmpl
+	}
+
+	return opName + " " + subject
+}
+
+// destinationSpanAttrs always includes the concrete subject as
+// messaging.destination.name, plus messaging.destination.template when a
+// template is derived for subject.
+func (t *Telemetry) destinationSpanAttrs(subject string) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{msgsemconv.MessagingDestinationName(subject)}
+
+	if tmpl := t.template(subject); tmpl != "" {
+		attrs = append(attrs, msgsemconv.MessagingDestinationTemplate(tmpl))
+	}
+
+	return attrs
 }
 
 func errorType(err error) semconvmsg.ErrorTypeAttr {
