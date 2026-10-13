@@ -130,7 +130,7 @@ handler := goflux.Chain[Task](
 ```go
 policy := middleware.NewBackoffRetryPolicy(time.Second, 5*time.Minute,
 	middleware.WithBackoffFactor(2),
-	middleware.WithMaxDeliveries(10), // Term on the 10th failed delivery
+	middleware.BackoffRetryPolicyWithMaxDeliveries(10), // Term on the 10th failed delivery
 )
 
 handler := goflux.Chain[Task](

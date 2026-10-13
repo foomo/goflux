@@ -63,10 +63,10 @@ func WithBackoffFactor(factor float64) BackoffRetryPolicyOption {
 	}
 }
 
-// WithMaxDeliveries terminates the message once it has been delivered n
+// BackoffRetryPolicyWithMaxDeliveries terminates the message once it has been delivered n
 // times. Zero (the default) never terminates retryable errors. Has no effect
 // when the transport does not report delivery counts.
-func WithMaxDeliveries(n uint64) BackoffRetryPolicyOption {
+func BackoffRetryPolicyWithMaxDeliveries(n uint64) BackoffRetryPolicyOption {
 	return func(c *backoffRetryPolicyConfig) { c.maxDeliveries = n }
 }
 
@@ -101,6 +101,20 @@ func NewBackoffRetryPolicy(initial, maxDelay time.Duration, opts ...BackoffRetry
 	}
 }
 
+type (
+	retryAckConfig struct {
+		tel *goflux.Telemetry
+	}
+	// RetryAckOption configures [RetryAck].
+	RetryAckOption func(*retryAckConfig)
+)
+
+// RetryAckWithTelemetry sets the Telemetry instance used to record ack outcomes.
+// If not provided, a default instance is created from the current OTel globals.
+func RetryAckWithTelemetry(t *goflux.Telemetry) RetryAckOption {
+	return func(c *retryAckConfig) { c.tel = t }
+}
+
 // RetryAck returns a Middleware that acknowledges messages based on handler
 // outcome and a [RetryPolicy]:
 //   - nil error: [goflux.Message.Ack]
@@ -108,9 +122,17 @@ func NewBackoffRetryPolicy(initial, maxDelay time.Duration, opts ...BackoffRetry
 //   - non-nil error + [RetryNakWithDelay]: [goflux.Message.NakWithDelay]
 //   - non-nil error + [RetryNak]: [goflux.Message.Nak]
 //
-// The policy receives the message's [goflux.Message.Delivery] metadata.
-// Messages without an acker (fire-and-forget transports) are passed through.
-func RetryAck[T any](policy RetryPolicy) goflux.Middleware[T] {
+// The policy receives the message's [goflux.Message.Delivery] metadata. Each
+// outcome is recorded via [goflux.Telemetry.RecordAckOutcome]. Messages
+// without an acker (fire-and-forget transports) are passed through.
+func RetryAck[T any](policy RetryPolicy, opts ...RetryAckOption) goflux.Middleware[T] {
+	cfg := &retryAckConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
+	tel := goflux.DefaultTelemetry(cfg.tel)
+
 	return func(next goflux.Handler[T]) goflux.Handler[T] {
 		return func(ctx context.Context, msg goflux.Message[T]) error {
 			err := next(ctx, msg)
@@ -119,19 +141,32 @@ func RetryAck[T any](policy RetryPolicy) goflux.Middleware[T] {
 			}
 
 			if err == nil {
-				return msg.Ack()
+				ackErr := msg.Ack()
+				tel.RecordAckOutcome(ctx, "ack", msg.Subject, ackErr)
+
+				return ackErr
 			}
 
 			decision := policy(err, msg.Delivery())
 
+			var (
+				action string
+				ackErr error
+			)
+
 			switch decision.Action {
 			case RetryTerm:
-				_ = msg.Term()
+				action = "term"
+				ackErr = msg.Term()
 			case RetryNakWithDelay:
-				_ = msg.NakWithDelay(decision.Delay)
+				action = "nak_with_delay"
+				ackErr = msg.NakWithDelay(decision.Delay)
 			default:
-				_ = msg.Nak()
+				action = "nak"
+				ackErr = msg.Nak()
 			}
+
+			tel.RecordAckOutcome(ctx, action, msg.Subject, ackErr)
 
 			return err
 		}

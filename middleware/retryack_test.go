@@ -9,6 +9,11 @@ import (
 
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/middleware"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestNewRetryPolicy_NonRetryable(t *testing.T) {
@@ -200,7 +205,7 @@ func TestNewBackoffRetryPolicy_Factor(t *testing.T) {
 func TestNewBackoffRetryPolicy_MaxDeliveries(t *testing.T) {
 	t.Parallel()
 
-	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute, middleware.WithMaxDeliveries(3))
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute, middleware.BackoffRetryPolicyWithMaxDeliveries(3))
 
 	if d := policy(errors.New("transient"), goflux.Delivery{NumDelivered: 2}); d.Action != middleware.RetryNakWithDelay {
 		t.Fatalf("expected RetryNakWithDelay before limit, got %v", d.Action)
@@ -245,7 +250,7 @@ func TestRetryAck_PassesDeliveryToPolicy(t *testing.T) {
 // message's delivery count and terminates after a maximum.
 func ExampleNewBackoffRetryPolicy() {
 	policy := middleware.NewBackoffRetryPolicy(time.Second, 30*time.Second,
-		middleware.WithMaxDeliveries(5),
+		middleware.BackoffRetryPolicyWithMaxDeliveries(5),
 	)
 
 	for n := uint64(1); n <= 5; n++ {
@@ -259,6 +264,54 @@ func ExampleNewBackoffRetryPolicy() {
 	// delivery=3 action=1 delay=4s
 	// delivery=4 action=1 delay=8s
 	// delivery=5 action=2 delay=0s
+}
+
+func TestRetryAck_RecordsAckOutcome(t *testing.T) {
+	t.Parallel()
+
+	metricReader := metric.NewManualReader()
+	mp := metric.NewMeterProvider(metric.WithReader(metricReader))
+
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(goflux.WithMeterProvider(mp))
+	require.NoError(t, err)
+
+	policy := middleware.NewRetryPolicy(time.Second)
+	acker := &recordingAcker{}
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(acker)
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(tel))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	_ = handler(context.Background(), msg)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, metricReader.Collect(context.Background(), &rm))
+
+	var dp *metricdata.DataPoint[int64]
+
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "goflux.processor.ack.outcome" {
+				continue
+			}
+
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			require.True(t, ok)
+			require.Len(t, sum.DataPoints, 1)
+			dp = &sum.DataPoints[0]
+		}
+	}
+
+	require.NotNil(t, dp, "expected goflux.processor.ack.outcome metric")
+
+	action, ok := dp.Attributes.Value(attribute.Key("goflux.ack.action"))
+	require.True(t, ok)
+	assert.Equal(t, "nak_with_delay", action.AsString())
 }
 
 type recordingAcker struct {

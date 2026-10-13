@@ -320,8 +320,9 @@ type RetryDecision struct {
 | `NewRetryPolicy(delay)` | `middleware` | Term non-retryable, nak-with-delay otherwise |
 | `NewBackoffRetryPolicy(initial, max, opts...)` | `middleware` | Delay `initial * factor^(NumDelivered-1)`, capped at `max` |
 | `WithBackoffFactor(f)` | `middleware` | Backoff multiplier (default 2) |
-| `WithMaxDeliveries(n)` | `middleware` | Term once `NumDelivered >= n` |
-| `RetryAck[T](policy)` | `middleware` | Middleware that applies retry policy to ack decisions |
+| `BackoffRetryPolicyWithMaxDeliveries(n)` | `middleware` | Term once `NumDelivered >= n` |
+| `RetryAck[T](policy, opts...)` | `middleware` | Middleware that applies retry policy to ack decisions, records outcome via telemetry |
+| `RetryAckWithTelemetry(tel)` | `middleware` | Set the `*goflux.Telemetry` used by `RetryAck` for ack-outcome recording |
 | `ErrNonRetryable` | `goflux` | Sentinel for permanent failures |
 | `NonRetryable(err)` | `goflux` | Wrap error as non-retryable |
 | `IsNonRetryable(err)` | `goflux` | Check if error is non-retryable |
