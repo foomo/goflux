@@ -189,7 +189,7 @@ go func() {
 		fmt.Printf("pulled: %s %s\n", msg.Payload.ID, msg.Payload.Name)
 		err := processEvent(msg.Payload)
 		if err != nil {
-			d := policy(err)
+			d := policy(err, msg.Delivery())
 			switch d.Action {
 			case middleware.RetryNakWithDelay:
 				return msg.NakWithDelay(d.Delay)

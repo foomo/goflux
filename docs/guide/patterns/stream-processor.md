@@ -30,7 +30,7 @@ policy := middleware.NewRetryPolicy(5 * time.Second)
 stream.Process(5, func(ctx context.Context, msg goflux.Message[Task]) error {
     err := processTask(ctx, msg.Payload)
     if err != nil {
-        decision := policy(err)
+        decision := policy(err, msg.Delivery())
         switch decision.Action {
         case middleware.RetryNak:
             return msg.Nak()
