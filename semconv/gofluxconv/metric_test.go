@@ -23,8 +23,8 @@ func TestAckOutcome(t *testing.T) {
 	assert.NotNil(t, m.Inst())
 
 	// must not panic
-	m.Add(context.Background(), 1, "ack", "orders.created", false)
-	m.Add(context.Background(), 1, "nak", "orders.created", true)
+	m.Add(context.Background(), 1, "ack", m.AttrDestinationName("orders.created"), false)
+	m.Add(context.Background(), 1, "nak", m.AttrDestinationTemplate("orders.*"), true)
 }
 
 func TestAckOutcome_nilMeter(t *testing.T) {
@@ -36,7 +36,7 @@ func TestAckOutcome_nilMeter(t *testing.T) {
 	assert.Nil(t, m.Inst())
 
 	// must not panic with nil instrument
-	m.Add(context.Background(), 1, "ack", "orders.created", false)
+	m.Add(context.Background(), 1, "ack", m.AttrDestinationName("orders.created"), false)
 }
 
 func TestConsumerLag(t *testing.T) {

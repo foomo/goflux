@@ -77,6 +77,10 @@ func BackoffRetryPolicyWithMaxDeliveries(n uint64) BackoffRetryPolicyOption {
 // maxDelay. Non-retryable errors (see [goflux.ErrNonRetryable]) are
 // terminated. When the transport does not report a delivery count, the first
 // delivery is assumed and initial is used.
+//
+// maxDelay must be positive and at least initial: it is a hard cap, not an
+// optional one, so zero yields NakWithDelay(0) — immediate redelivery — on
+// every failure.
 func NewBackoffRetryPolicy(initial, maxDelay time.Duration, opts ...BackoffRetryPolicyOption) RetryPolicy {
 	cfg := &backoffRetryPolicyConfig{factor: 2}
 	for _, o := range opts {
@@ -113,6 +117,8 @@ type (
 
 // RetryAckWithTelemetry sets the Telemetry instance used to record ack outcomes.
 // If not provided, a default instance is created from the current OTel globals.
+// Pass the transport's instance so its [goflux.WithDestinationTemplate] also
+// bounds the cardinality of the ack outcome metric.
 func RetryAckWithTelemetry(t *goflux.Telemetry) RetryAckOption {
 	return func(c *retryAckConfig) { c.tel = t }
 }
@@ -171,10 +177,13 @@ func RetryAck[T any](policy RetryPolicy, opts ...RetryAckOption) goflux.Middlewa
 			}
 
 			tel.RecordAckOutcome(ctx, action, msg.Subject, ackErr)
-			trace.SpanFromContext(ctx).SetAttributes(
-				semconv.AckAction(action),
-				semconv.AckDeliveryCount(delivery.NumDelivered),
-			)
+
+			span := trace.SpanFromContext(ctx)
+			span.SetAttributes(semconv.AckAction(action))
+
+			if delivery.NumDelivered > 0 {
+				span.SetAttributes(semconv.AckDeliveryCount(delivery.NumDelivered))
+			}
 
 			return err
 		}

@@ -389,8 +389,12 @@ func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int6
 
 // RecordAckOutcome records an acknowledgment outcome (ack, nak, nak_with_delay,
 // term) with an optional error label when the ack operation itself fails.
+// The subject is mapped through [WithDestinationTemplate] when configured.
 func (t *Telemetry) RecordAckOutcome(ctx context.Context, action, subject string, err error) {
-	t.ackOutcome.Add(ctx, 1, action, subject, err != nil)
+	t.ackOutcome.Add(ctx, 1, action,
+		t.destinationAttr(subject, t.ackOutcome.AttrDestinationName, t.ackOutcome.AttrDestinationTemplate),
+		err != nil,
+	)
 }
 
 // ---------------------------------------------------------------------------

@@ -372,6 +372,36 @@ func TestRetryAck_SetsSpanAttributes(t *testing.T) {
 	assert.Equal(t, int64(3), deliveryCount)
 }
 
+func TestRetryAck_OmitsUnknownDeliveryCount(t *testing.T) {
+	t.Parallel()
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	policy := middleware.NewRetryPolicy(time.Second)
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(&recordingAcker{})
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(goflux.NewNoopTelemetry()))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	ctx, span := tp.Tracer("test").Start(context.Background(), "process")
+	_ = handler(ctx, msg)
+
+	span.End()
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	for _, a := range spans[0].Attributes() {
+		assert.NotEqual(t, attribute.Key("goflux.ack.delivery_count"), a.Key, "unknown delivery count must not be recorded")
+	}
+}
+
 type recordingAcker struct {
 	acked          bool
 	naked          bool

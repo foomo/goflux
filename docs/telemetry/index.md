@@ -106,7 +106,8 @@ tel, err := goflux.NewTelemetry(
 
 - A non-empty result is recorded as `messaging.destination.template` in place of `messaging.destination.name`, never both.
 - An empty result keeps `messaging.destination.name` for that call.
-- Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch` and `RecordRequest`. `goflux.consumer.lag` and `goflux.processor.ack.outcome` still record the concrete subject.
+- Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch`, `RecordRequest` and `RecordAckOutcome`. `goflux.consumer.lag` still records the concrete subject.
+- `middleware.RetryAck` records ack outcomes through its own `Telemetry`; pass the transport's instance with `middleware.RetryAckWithTelemetry` so the same template applies.
 - Also applies to span names: the same template replaces the subject in `{operation} {subject}` when one is derived. Span attributes always keep `messaging.destination.name` (the concrete subject) and additionally set `messaging.destination.template` when a template is derived — never dropping the concrete name.
 - `fn` runs on every recorded operation and must be cheap and safe for concurrent use.
 
@@ -127,6 +128,8 @@ Spans follow OpenTelemetry messaging semantic conventions and are named `{operat
 | `messaging.consumer.group.name` | NATS / JetStream consumer spans | Queue group (NATS) or durable/consumer name (JetStream) |
 | `goflux.reply.body.size` | request-reply legs | Reply payload size (bytes); a dedicated key so it does not overwrite the request's `messaging.message.body.size` |
 | `goflux.reply.subject` | NATS requester | Subject the reply was received on |
+| `goflux.ack.action` | process spans with `middleware.RetryAck` | `ack` / `nak` / `nak_with_delay` / `term` |
+| `goflux.ack.delivery_count` | process spans with `middleware.RetryAck`, failed messages | Transport-reported delivery count; omitted when the transport does not report one |
 
 ## Context Propagation
 

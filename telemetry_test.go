@@ -216,6 +216,7 @@ func TestWithDestinationTemplate_CollapsesConcreteSubjects(t *testing.T) {
 
 		require.NoError(t, tel.RecordPublish(ctx, subject, "test", func(context.Context) error { return nil }))
 		require.NoError(t, tel.RecordProcess(ctx, subject, "test", func(context.Context) error { return nil }))
+		tel.RecordAckOutcome(ctx, "ack", subject, nil)
 	}
 
 	var rm metricdata.ResourceMetrics
@@ -235,7 +236,7 @@ func TestWithDestinationTemplate_CollapsesConcreteSubjects(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"messaging.client.sent.messages", "messaging.client.operation.duration", "messaging.client.consumed.messages", "messaging.process.duration"} {
+	for _, name := range []string{"messaging.client.sent.messages", "messaging.client.operation.duration", "messaging.client.consumed.messages", "messaging.process.duration", "goflux.processor.ack.outcome"} {
 		fps := attrSets[name]
 		require.NotEmpty(t, fps, "expected data points for %s", name)
 
