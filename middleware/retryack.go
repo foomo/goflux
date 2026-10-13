@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/foomo/goflux"
+	"github.com/foomo/goflux/semconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // RetryAction describes how a failed message should be acknowledged.
@@ -143,11 +145,13 @@ func RetryAck[T any](policy RetryPolicy, opts ...RetryAckOption) goflux.Middlewa
 			if err == nil {
 				ackErr := msg.Ack()
 				tel.RecordAckOutcome(ctx, "ack", msg.Subject, ackErr)
+				trace.SpanFromContext(ctx).SetAttributes(semconv.AckAction("ack"))
 
 				return ackErr
 			}
 
-			decision := policy(err, msg.Delivery())
+			delivery := msg.Delivery()
+			decision := policy(err, delivery)
 
 			var (
 				action string
@@ -167,6 +171,10 @@ func RetryAck[T any](policy RetryPolicy, opts ...RetryAckOption) goflux.Middlewa
 			}
 
 			tel.RecordAckOutcome(ctx, action, msg.Subject, ackErr)
+			trace.SpanFromContext(ctx).SetAttributes(
+				semconv.AckAction(action),
+				semconv.AckDeliveryCount(delivery.NumDelivered),
+			)
 
 			return err
 		}

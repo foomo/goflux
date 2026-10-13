@@ -14,6 +14,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestNewRetryPolicy_NonRetryable(t *testing.T) {
@@ -312,6 +314,62 @@ func TestRetryAck_RecordsAckOutcome(t *testing.T) {
 	action, ok := dp.Attributes.Value(attribute.Key("goflux.ack.action"))
 	require.True(t, ok)
 	assert.Equal(t, "nak_with_delay", action.AsString())
+}
+
+func TestRetryAck_SetsSpanAttributes(t *testing.T) {
+	t.Parallel()
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(goflux.WithTracerProvider(tp))
+	require.NoError(t, err)
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute)
+	acker := &recordingAcker{numDelivered: 3}
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(acker)
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(tel))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	ctx, span := tp.Tracer("test").Start(context.Background(), "process")
+	_ = handler(ctx, msg)
+
+	span.End()
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	attrs := spans[0].Attributes()
+
+	var (
+		action           string
+		deliveryCount    int64
+		hasAction        bool
+		hasDeliveryCount bool
+	)
+
+	for _, a := range attrs {
+		switch a.Key {
+		case "goflux.ack.action":
+			action = a.Value.AsString()
+			hasAction = true
+		case "goflux.ack.delivery_count":
+			deliveryCount = a.Value.AsInt64()
+			hasDeliveryCount = true
+		}
+	}
+
+	require.True(t, hasAction, "expected goflux.ack.action attribute")
+	assert.Equal(t, "nak_with_delay", action)
+
+	require.True(t, hasDeliveryCount, "expected goflux.ack.delivery_count attribute")
+	assert.Equal(t, int64(3), deliveryCount)
 }
 
 type recordingAcker struct {
