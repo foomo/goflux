@@ -63,7 +63,7 @@ func main() {
 		fmt.Printf("processing task %s\n", msg.Payload.ID)
 		err := processTask(msg.Payload)
 		if err != nil {
-			d := policy(err)
+			d := policy(err, msg.Delivery())
 			switch d.Action {
 			case middleware.RetryNak:
 				return msg.Nak()
@@ -111,8 +111,8 @@ handler := goflux.Chain[Task](
 )(myHandler)
 
 // Retry-aware ack with custom policy.
-policy := middleware.RetryPolicy(func(err error) middleware.RetryDecision {
-	if goflux.IsNonRetryable(err) {
+policy := middleware.RetryPolicy(func(err error, delivery goflux.Delivery) middleware.RetryDecision {
+	if goflux.IsNonRetryable(err) || delivery.NumDelivered >= 10 {
 		return middleware.RetryDecision{Action: middleware.RetryTerm}
 	}
 	return middleware.RetryDecision{Action: middleware.RetryNakWithDelay, Delay: 5 * time.Second}
@@ -122,6 +122,24 @@ handler := goflux.Chain[Task](
 	middleware.RetryAck[Task](policy),
 )(myHandler)
 ```
+
+### Growing backoff and long-running handlers
+
+`NewBackoffRetryPolicy` grows the nak delay with the JetStream delivery count (`initial * factor^(NumDelivered-1)`, capped). `KeepAlive` calls `msg.InProgress()` on an interval so a long import is not redelivered when it exceeds the consumer's `AckWait`:
+
+```go
+policy := middleware.NewBackoffRetryPolicy(time.Second, 5*time.Minute,
+	middleware.WithBackoffFactor(2),
+	middleware.BackoffRetryPolicyWithMaxDeliveries(10), // Term on the 10th failed delivery
+)
+
+handler := goflux.Chain[Task](
+	middleware.RetryAck[Task](policy),        // outer: ack/nak after the handler returns
+	middleware.KeepAlive[Task](10*time.Second), // inner: heartbeat while it runs (AckWait 30s)
+)(importHandler)
+```
+
+Handlers can also call `msg.InProgress()` directly, e.g. after each processed batch, and read `msg.Delivery()` for the delivery count and timestamp.
 
 ## Key Rules
 

@@ -9,13 +9,20 @@ import (
 
 	"github.com/foomo/goflux"
 	"github.com/foomo/goflux/middleware"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 func TestNewRetryPolicy_NonRetryable(t *testing.T) {
 	t.Parallel()
 
 	policy := middleware.NewRetryPolicy(5 * time.Second)
-	decision := policy(goflux.ErrNonRetryable)
+	decision := policy(goflux.ErrNonRetryable, goflux.Delivery{})
 
 	if decision.Action != middleware.RetryTerm {
 		t.Fatalf("expected RetryTerm, got %v", decision.Action)
@@ -27,7 +34,7 @@ func TestNewRetryPolicy_Retryable(t *testing.T) {
 
 	delay := 5 * time.Second
 	policy := middleware.NewRetryPolicy(delay)
-	decision := policy(errors.New("transient"))
+	decision := policy(errors.New("transient"), goflux.Delivery{})
 
 	if decision.Action != middleware.RetryNakWithDelay {
 		t.Fatalf("expected RetryNakWithDelay, got %v", decision.Action)
@@ -42,7 +49,7 @@ func TestNewRetryPolicy_WrappedNonRetryable(t *testing.T) {
 	t.Parallel()
 
 	policy := middleware.NewRetryPolicy(5 * time.Second)
-	decision := policy(goflux.NonRetryable(errors.New("bad data")))
+	decision := policy(goflux.NonRetryable(errors.New("bad data")), goflux.Delivery{})
 
 	if decision.Action != middleware.RetryTerm {
 		t.Fatalf("expected RetryTerm for wrapped non-retryable, got %v", decision.Action)
@@ -144,16 +151,255 @@ func ExampleNewRetryPolicy() {
 	policy := middleware.NewRetryPolicy(2 * time.Second)
 
 	// Retryable error.
-	d := policy(errors.New("connection reset"))
+	d := policy(errors.New("connection reset"), goflux.Delivery{})
 	fmt.Printf("action=%d delay=%v\n", d.Action, d.Delay)
 
 	// Non-retryable error.
-	d = policy(goflux.NonRetryable(errors.New("schema mismatch")))
+	d = policy(goflux.NonRetryable(errors.New("schema mismatch")), goflux.Delivery{})
 	fmt.Printf("action=%d\n", d.Action)
 
 	// Output:
 	// action=1 delay=2s
 	// action=2
+}
+
+func TestNewBackoffRetryPolicy_GrowsWithDeliveryCount(t *testing.T) {
+	t.Parallel()
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, 10*time.Second)
+
+	tests := []struct {
+		numDelivered uint64
+		want         time.Duration
+	}{
+		{0, time.Second}, // unknown → first delivery
+		{1, time.Second},
+		{2, 2 * time.Second},
+		{3, 4 * time.Second},
+		{4, 8 * time.Second},
+		{5, 10 * time.Second}, // capped
+		{100, 10 * time.Second},
+	}
+
+	for _, tt := range tests {
+		d := policy(errors.New("transient"), goflux.Delivery{NumDelivered: tt.numDelivered})
+		if d.Action != middleware.RetryNakWithDelay {
+			t.Fatalf("delivery %d: expected RetryNakWithDelay, got %v", tt.numDelivered, d.Action)
+		}
+
+		if d.Delay != tt.want {
+			t.Fatalf("delivery %d: expected delay %v, got %v", tt.numDelivered, tt.want, d.Delay)
+		}
+	}
+}
+
+func TestNewBackoffRetryPolicy_Factor(t *testing.T) {
+	t.Parallel()
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute, middleware.WithBackoffFactor(3))
+
+	d := policy(errors.New("transient"), goflux.Delivery{NumDelivered: 3})
+	if d.Delay != 9*time.Second {
+		t.Fatalf("expected delay 9s, got %v", d.Delay)
+	}
+}
+
+func TestNewBackoffRetryPolicy_MaxDeliveries(t *testing.T) {
+	t.Parallel()
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute, middleware.BackoffRetryPolicyWithMaxDeliveries(3))
+
+	if d := policy(errors.New("transient"), goflux.Delivery{NumDelivered: 2}); d.Action != middleware.RetryNakWithDelay {
+		t.Fatalf("expected RetryNakWithDelay before limit, got %v", d.Action)
+	}
+
+	if d := policy(errors.New("transient"), goflux.Delivery{NumDelivered: 3}); d.Action != middleware.RetryTerm {
+		t.Fatalf("expected RetryTerm at limit, got %v", d.Action)
+	}
+}
+
+func TestNewBackoffRetryPolicy_NonRetryable(t *testing.T) {
+	t.Parallel()
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute)
+
+	if d := policy(goflux.NonRetryable(errors.New("bad")), goflux.Delivery{NumDelivered: 1}); d.Action != middleware.RetryTerm {
+		t.Fatalf("expected RetryTerm, got %v", d.Action)
+	}
+}
+
+func TestRetryAck_PassesDeliveryToPolicy(t *testing.T) {
+	t.Parallel()
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute)
+	acker := &recordingAcker{numDelivered: 3}
+	msg := goflux.Message[string]{Subject: "test", Payload: "fail"}.WithAcker(acker)
+
+	handler := middleware.RetryAck[string](policy)(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	_ = handler(context.Background(), msg)
+
+	if acker.delay != 4*time.Second {
+		t.Fatalf("expected delay 4s for third delivery, got %v", acker.delay)
+	}
+}
+
+// ExampleNewBackoffRetryPolicy demonstrates a delay that grows with the
+// message's delivery count and terminates after a maximum.
+func ExampleNewBackoffRetryPolicy() {
+	policy := middleware.NewBackoffRetryPolicy(time.Second, 30*time.Second,
+		middleware.BackoffRetryPolicyWithMaxDeliveries(5),
+	)
+
+	for n := uint64(1); n <= 5; n++ {
+		d := policy(errors.New("timeout"), goflux.Delivery{NumDelivered: n})
+		fmt.Printf("delivery=%d action=%d delay=%v\n", n, d.Action, d.Delay)
+	}
+
+	// Output:
+	// delivery=1 action=1 delay=1s
+	// delivery=2 action=1 delay=2s
+	// delivery=3 action=1 delay=4s
+	// delivery=4 action=1 delay=8s
+	// delivery=5 action=2 delay=0s
+}
+
+func TestRetryAck_RecordsAckOutcome(t *testing.T) {
+	t.Parallel()
+
+	metricReader := metric.NewManualReader()
+	mp := metric.NewMeterProvider(metric.WithReader(metricReader))
+
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(goflux.WithMeterProvider(mp))
+	require.NoError(t, err)
+
+	policy := middleware.NewRetryPolicy(time.Second)
+	acker := &recordingAcker{}
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(acker)
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(tel))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	_ = handler(context.Background(), msg)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, metricReader.Collect(context.Background(), &rm))
+
+	var dp *metricdata.DataPoint[int64]
+
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "goflux.processor.ack.outcome" {
+				continue
+			}
+
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			require.True(t, ok)
+			require.Len(t, sum.DataPoints, 1)
+			dp = &sum.DataPoints[0]
+		}
+	}
+
+	require.NotNil(t, dp, "expected goflux.processor.ack.outcome metric")
+
+	action, ok := dp.Attributes.Value(attribute.Key("goflux.ack.action"))
+	require.True(t, ok)
+	assert.Equal(t, "nak_with_delay", action.AsString())
+}
+
+func TestRetryAck_SetsSpanAttributes(t *testing.T) {
+	t.Parallel()
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(goflux.WithTracerProvider(tp))
+	require.NoError(t, err)
+
+	policy := middleware.NewBackoffRetryPolicy(time.Second, time.Minute)
+	acker := &recordingAcker{numDelivered: 3}
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(acker)
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(tel))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	ctx, span := tp.Tracer("test").Start(context.Background(), "process")
+	_ = handler(ctx, msg)
+
+	span.End()
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	attrs := spans[0].Attributes()
+
+	var (
+		action           string
+		deliveryCount    int64
+		hasAction        bool
+		hasDeliveryCount bool
+	)
+
+	for _, a := range attrs {
+		switch a.Key {
+		case "goflux.ack.action":
+			action = a.Value.AsString()
+			hasAction = true
+		case "goflux.ack.delivery_count":
+			deliveryCount = a.Value.AsInt64()
+			hasDeliveryCount = true
+		}
+	}
+
+	require.True(t, hasAction, "expected goflux.ack.action attribute")
+	assert.Equal(t, "nak_with_delay", action)
+
+	require.True(t, hasDeliveryCount, "expected goflux.ack.delivery_count attribute")
+	assert.Equal(t, int64(3), deliveryCount)
+}
+
+func TestRetryAck_OmitsUnknownDeliveryCount(t *testing.T) {
+	t.Parallel()
+
+	spanRecorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	policy := middleware.NewRetryPolicy(time.Second)
+	msg := goflux.Message[string]{Subject: "orders.created", Payload: "fail"}.WithAcker(&recordingAcker{})
+
+	handler := middleware.RetryAck[string](policy, middleware.RetryAckWithTelemetry(goflux.NewNoopTelemetry()))(
+		func(_ context.Context, _ goflux.Message[string]) error {
+			return errors.New("transient")
+		},
+	)
+
+	ctx, span := tp.Tracer("test").Start(context.Background(), "process")
+	_ = handler(ctx, msg)
+
+	span.End()
+
+	spans := spanRecorder.Ended()
+	require.Len(t, spans, 1)
+
+	for _, a := range spans[0].Attributes() {
+		assert.NotEqual(t, attribute.Key("goflux.ack.delivery_count"), a.Key, "unknown delivery count must not be recorded")
+	}
 }
 
 type recordingAcker struct {
@@ -162,6 +408,11 @@ type recordingAcker struct {
 	nakedWithDelay bool
 	delay          time.Duration
 	termed         bool
+	numDelivered   uint64
+}
+
+func (a *recordingAcker) Delivery() goflux.Delivery {
+	return goflux.Delivery{NumDelivered: a.numDelivered}
 }
 
 func (a *recordingAcker) Ack() error { a.acked = true; return nil }

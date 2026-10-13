@@ -116,6 +116,10 @@ type Message[T any] struct {
 | `msg.Nak()` | Signal processing failure (redelivery) |
 | `msg.NakWithDelay(d)` | Nak with redelivery delay hint |
 | `msg.Term()` | Terminal rejection (no redelivery) |
+| `msg.InProgress()` | Reset the redelivery timer for long-running work (no-op if unsupported) |
+| `msg.Delivery()` | Delivery metadata (`NumDelivered`, `Timestamp`); zero value if unsupported |
+
+Optional acker interfaces: `DelayedNaker`, `Terminator`, `InProgresser`, `DeliveryReporter`. The JetStream transport implements all of them.
 
 ### Header
 
@@ -185,6 +189,7 @@ Built-in implementations live in the `github.com/foomo/goflux/middleware` packag
 |------------|---------|-----------|-------------|
 | `AutoAck[T]()` | `middleware` | `-> Middleware[T]` | Ack on nil error, Nak on non-nil |
 | `RetryAck[T](policy)` | `middleware` | `RetryPolicy -> Middleware[T]` | Classify errors into ack/nak/term via policy |
+| `KeepAlive[T](interval)` | `middleware` | `time.Duration -> Middleware[T]` | Call `InProgress()` periodically while the handler runs |
 | `InjectMessageID[T]()` | `middleware` | `-> Middleware[T]` | Header message ID → context |
 | `InjectHeader[T]()` | `middleware` | `-> Middleware[T]` | Message header → context |
 | `ForwardMessageID[T]()` | `middleware` | `-> Middleware[T]` | Forward message ID from context through pipe stages |
@@ -296,7 +301,7 @@ if errors.Is(err, goflux.ErrEncode) { /* handle codec problem */ }
 ## Retry Policy (`middleware` package)
 
 ```go
-type RetryPolicy func(err error) RetryDecision
+type RetryPolicy func(err error, delivery goflux.Delivery) RetryDecision
 
 type RetryDecision struct {
     Action RetryAction
@@ -313,7 +318,11 @@ type RetryDecision struct {
 | Function | Package | Description |
 |----------|---------|-------------|
 | `NewRetryPolicy(delay)` | `middleware` | Term non-retryable, nak-with-delay otherwise |
-| `RetryAck[T](policy)` | `middleware` | Middleware that applies retry policy to ack decisions |
+| `NewBackoffRetryPolicy(initial, max, opts...)` | `middleware` | Delay `initial * factor^(NumDelivered-1)`, capped at `max` |
+| `WithBackoffFactor(f)` | `middleware` | Backoff multiplier (default 2) |
+| `BackoffRetryPolicyWithMaxDeliveries(n)` | `middleware` | Term once `NumDelivered >= n` |
+| `RetryAck[T](policy, opts...)` | `middleware` | Middleware that applies retry policy to ack decisions, records outcome via telemetry |
+| `RetryAckWithTelemetry(tel)` | `middleware` | Set the `*goflux.Telemetry` used by `RetryAck` for ack-outcome recording |
 | `ErrNonRetryable` | `goflux` | Sentinel for permanent failures |
 | `NonRetryable(err)` | `goflux` | Wrap error as non-retryable |
 | `IsNonRetryable(err)` | `goflux` | Check if error is non-retryable |

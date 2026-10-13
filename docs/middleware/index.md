@@ -38,6 +38,23 @@ Acknowledges messages automatically based on the handler result: `nil` error tri
 autoAcked := middleware.AutoAck[Event]()(handler)
 ```
 
+### KeepAlive
+
+```go
+func KeepAlive[T any](interval time.Duration) Middleware[T]
+```
+
+Calls `msg.InProgress()` every `interval` while the handler runs, so long-running handlers (imports, batch jobs) are not redelivered when they exceed the transport's ack timeout (JetStream `AckWait`). Choose an interval well below the timeout. The heartbeat stops before the handler's result is returned, so place it inside `AutoAck`/`RetryAck`:
+
+```go
+handler := goflux.Chain[Event](
+	middleware.RetryAck[Event](middleware.NewBackoffRetryPolicy(time.Second, 5*time.Minute)),
+	middleware.KeepAlive[Event](10*time.Second),
+)(importHandler)
+```
+
+`NewBackoffRetryPolicy` grows the nak delay with `msg.Delivery().NumDelivered`; see [Pull Consumer](/guide/patterns/pull-consumer).
+
 ### InjectMessageID
 
 ```go

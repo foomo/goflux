@@ -76,6 +76,26 @@ func (m Message[T]) NakWithDelay(d time.Duration) error {
 	return m.acker.Nak()
 }
 
+// InProgress signals that processing is still ongoing, resetting the
+// transport's redelivery timer. No-op if the transport does not support it.
+func (m Message[T]) InProgress() error {
+	if ip, ok := m.acker.(InProgresser); ok {
+		return ip.InProgress()
+	}
+
+	return nil
+}
+
+// Delivery returns the transport's delivery metadata. Returns the zero value
+// if the transport does not report it.
+func (m Message[T]) Delivery() Delivery {
+	if dr, ok := m.acker.(DeliveryReporter); ok {
+		return dr.Delivery()
+	}
+
+	return Delivery{}
+}
+
 // Term terminates processing — the message will not be redelivered.
 // Falls back to Ack if the transport does not support terminal rejection,
 // to prevent infinite redelivery loops.

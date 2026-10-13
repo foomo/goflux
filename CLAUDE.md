@@ -107,7 +107,9 @@ provided by `github.com/foomo/goflow` — use `bridge.ToStream` to bridge.
 middleware lives in `github.com/foomo/goflux/middleware`:
 
 - `middleware.AutoAck[T]()` — ack on nil error, nak on non-nil
-- `middleware.RetryAck[T](policy)` — retry-policy-aware ack (nak/nak-with-delay/term based on error)
+- `middleware.RetryAck[T](policy)` — retry-policy-aware ack (nak/nak-with-delay/term based on error and
+  `msg.Delivery()`); `NewBackoffRetryPolicy` grows the delay with `Delivery.NumDelivered`
+- `middleware.KeepAlive[T](interval)` — periodic `msg.InProgress()` for long-running handlers (place inside RetryAck)
 - `middleware.InjectMessageID[T]()` / `middleware.InjectHeader[T]()` — inject header values into context
 - `middleware.ForwardMessageID[T]()` — forward message ID from context through pipe stages
 

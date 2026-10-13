@@ -18,7 +18,7 @@ Write business logic against core interfaces. Swap transports without touching h
 |------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | **Core Interfaces**    | `Publisher[T]`, `Subscriber[T]`, `ReadySubscriber[T]`, `Requester[Req, Resp]`, `Responder[Req, Resp]`, `Message[T]`, `Handler[T]` |
 | **Transports**         | Channel (in-process), NATS, JetStream, HTTP — each implements the core interfaces                                                 |
-| **Middleware**         | `Chain`, `AutoAck`, `RetryAck`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`                                             |
+| **Middleware**         | `Chain`, `AutoAck`, `RetryAck`, `KeepAlive`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`                                             |
 | **Pipeline Operators** | `pipe.New`, `pipe.NewMap`, `pipe.NewFlatMap`, `ToChan`, `bridge.ToStream`, `bridge.FromStream`, `BindPublisher`, `RetryPublisher` |
 | **Stream Processing**  | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow)                          |
 | **Lifecycle**          | `Group` — coordinated startup, fail-fast shutdown for multiple handlers                                                           |
