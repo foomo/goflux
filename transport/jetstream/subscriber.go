@@ -291,9 +291,6 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 				slog.String("consumer", consumerGroup),
 			)
 
-			if cc, err = consume(); err != nil {
-				return err
-			}
 		case cause != nil:
 			// The server rejected a pull request (jetstream.ErrBadRequest).
 			// Every replica sends the same requests, so returning would stop
@@ -313,9 +310,6 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 			case <-time.After(delay):
 			}
 
-			if cc, err = consume(); err != nil {
-				return err
-			}
 		default:
 			// The connection was closed (the caller owns it and can observe
 			// that via nats.ClosedHandler), or the caller stopped consumption
@@ -324,6 +318,11 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 			<-ctx.Done()
 
 			return nil
+		}
+
+		// Only the restart cases reach this point.
+		if cc, err = consume(); err != nil {
+			return err
 		}
 	}
 }

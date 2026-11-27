@@ -21,32 +21,24 @@ type Message[T any] struct {
 	acker   Acker
 }
 
-// messageJSON is the JSON form of [Message], plus the "nats" key that
-// versions before v0.12 used for Subject.
-type messageJSON[T any] struct {
-	Subject       string `json:"subject"`
-	LegacySubject string `json:"nats"`
-	Payload       T      `json:"payload"`
-	Header        Header `json:"header,omitempty"`
-	ID            string `json:"id,omitempty"`
-}
+// messageFields has the fields of [Message] without its UnmarshalJSON method.
+type messageFields[T any] Message[T]
 
 // UnmarshalJSON decodes a Message. It also accepts the "nats" key that
 // versions before v0.12 wrote for Subject; "subject" wins if both are set.
 func (m *Message[T]) UnmarshalJSON(b []byte) error {
-	v := messageJSON[T]{Payload: m.Payload, Header: m.Header}
+	v := struct {
+		*messageFields[T]
+
+		LegacySubject string `json:"nats"`
+	}{messageFields: (*messageFields[T])(m)}
 	if err := json.Unmarshal(b, &v); err != nil {
 		return err
 	}
 
-	m.Subject = v.Subject
 	if m.Subject == "" {
 		m.Subject = v.LegacySubject
 	}
-
-	m.Payload = v.Payload
-	m.Header = v.Header
-	m.ID = v.ID
 
 	return nil
 }
