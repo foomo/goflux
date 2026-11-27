@@ -8,13 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 github.com/foomo/goflux
 ```
 
-Multi-module workspace — submodules in `pkg/channel/`, `pkg/nats/`, `pkg/http/` each have their own `go.mod`. Use
-`go work` (auto-initialized by `make`).
+Multi-module workspace — `transport/nats/`, `transport/jetstream/` and `bridge/` have their own `go.mod`;
+`transport/channel/` and `transport/http/` are packages in the root module. Use `go work` (auto-initialized by `make`).
 
 ## Commands
 
 ```sh
-make check          # tidy + generate + lint + test + audit (full CI flow)
+make check          # tidy + generate + actionlint + lint.fix + test.race + audit (full CI flow)
 make test           # go test -tags=safe -shuffle=on across all modules
 make test.race      # tests with -race
 make lint           # golangci-lint across all modules
@@ -63,14 +63,15 @@ transports are swapped without touching handler code.
 - `Message[T]` — carries `Subject` (routing key) and `Payload T` (always fully decoded, no raw bytes)
 - `Topic[T]` — convenience struct embedding both Publisher and Subscriber
 
-### Transports (submodules)
+### Transports
 
-| Package        | Transport           | Notes                                                                                                                          |
-|----------------|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `pkg/channel/` | In-process channels | `Bus[T]` broker, backpressure by blocking, no codec needed                                                                     |
-| `pkg/nats/`    | NATS core           | Wraps `*nats.Conn`, publisher takes `goencode.Encoder[T, []byte]`, subscriber takes `goencode.Decoder[T, []byte]`, no ack/nack |
-| `pkg/http/`    | HTTP POST           | Publisher POSTs to `{baseURL}/{subject}`, Subscriber exposes `http.ServeMux` (does not own listener)                           |
-| `bridge/`      | goflow stream       | Own `go.mod`, isolates goflow dependency from root module                                                                      |
+| Package                | Transport           | Notes                                                                                                                          |
+|------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| `transport/channel/`   | In-process channels | Root module. `Bus[T]` broker, backpressure by blocking, no codec needed                                                        |
+| `transport/nats/`      | NATS core           | Own `go.mod`. Wraps `*nats.Conn`, publisher takes `goencode.Encoder[T, []byte]`, subscriber takes `goencode.Decoder[T, []byte]`, no ack/nack |
+| `transport/jetstream/` | NATS JetStream      | Own `go.mod`. Pull consumers only, ack/nak/term, `WithManualAck`, `WithConsumeOpts`, `WithConsumeErrHandler`; message ID sent as `Nats-Msg-Id` |
+| `transport/http/`      | HTTP POST           | Root module. Publisher POSTs to `{baseURL}/{subject}`, Subscriber exposes `http.ServeMux` (does not own listener)              |
+| `bridge/`              | goflow stream       | Own `go.mod`, isolates goflow dependency from root module                                                                      |
 
 Network transports take `goencode.Encoder[T, []byte]` for publishers and `goencode.Decoder[T, []byte]` for subscribers.
 Both are function types from `github.com/foomo/goencode`, composable via `PipeEncoder`/`PipeDecoder`. A
@@ -95,7 +96,7 @@ Handler factories that compose `Handler[T]` and `Publisher[T]`:
 - `ToChan[T]` (root package) — bridge subscriber to `<-chan Message[T]`; does not return until the subscription is
   established (uses `SubscribeWithReady` internally), so `bridge.ToStream` inherits the same guarantee
 - `bridge.ToStream[T]` / `bridge.FromStream[T]` (`bridge/` submodule) — bridge to/from `goflow.Stream[Message[T]]`
-- `Bind[T]` — fixed-subject publisher wrapper
+- `BindPublisher[T]` / `BindSubscriber[T]` / `BindTopic[T]` — fixed-subject wrappers
 - `RetryPublisher[T]` — publish retry with backoff; `WithRetryable` limits retries to selected errors
 
 Stream-processing operators (fan-out, fan-in, round-robin, filter, map, distinct, skip, take, throttle, peek) are
@@ -111,7 +112,7 @@ middleware lives in `github.com/foomo/goflux/middleware`:
   `msg.Delivery()`); `NewBackoffRetryPolicy` grows the delay with `Delivery.NumDelivered`
 - `middleware.KeepAlive[T](interval)` — periodic `msg.InProgress()` for long-running handlers (place inside RetryAck)
 - `middleware.InjectMessageID[T]()` / `middleware.InjectHeader[T]()` — inject header values into context
-- `middleware.ForwardMessageID[T]()` — forward message ID from context through pipe stages
+- `middleware.ForwardMessageID[T]()` — opt-in: put the received `msg.ID` into ctx so publishes carry it
 
 ### Telemetry
 
@@ -128,26 +129,35 @@ reads OTel globals unless overridden by `WithTracerProvider` / `WithMeterProvide
 
 ### Context Propagation
 
-- NATS and HTTP transports automatically propagate OTel trace context via transport headers (W3C Trace Context)
-- `InjectContext(ctx, carrier)` / `ExtractContext(ctx, carrier)` — thin wrappers around the global `TextMapPropagator`
-- `WithMessageID(ctx, id)` / `MessageID(ctx)` — opt-in business-level message ID, propagated via `X-Message-ID` header
-  and attached as `messaging.message.id` span attribute
+- NATS, JetStream and HTTP transports automatically propagate OTel trace context via transport headers (W3C Trace
+  Context); the channel transport passes the span context and message ID with the message
+- `Telemetry.InjectContext(ctx, carrier)` / `Telemetry.ExtractContext(ctx, carrier)` — use the Telemetry's propagator
+  (the global one unless `WithPropagator` is set)
+- `WithMessageID(ctx, id)` / `MessageID(ctx)` — opt-in business-level message ID for outgoing publishes, sent via
+  `X-Message-ID` header and attached as `messaging.message.id` span attribute. Subscribers expose the received ID as
+  `Message.ID` (like `Header`) and never put it into the handler ctx, so publishes from a handler do not inherit it
+  (JetStream would dedup them via `Nats-Msg-Id`). Transports pass it to `RecordProcess` via `WithProcessMessageID`;
+  responders record it on the span only
 - New transports crossing process boundaries should call `InjectContext` on publish and `ExtractContext` on subscribe
 
 ### Goroutine Management
 
 Uses `github.com/foomo/gofuncy` for goroutine lifecycle management with built-in OTel observability. Production code
-uses `gofuncy.Go` (fire-and-forget) and `gofuncy.All` (concurrent iteration). Tests use `gofuncy.Start`/
+uses `gofuncy.StartWithReady` (`ToChan`) and `gofuncy.GoWithCancel` (`KeepAlive`). Tests use `gofuncy.Start`/
 `gofuncy.StartWithReady` for synchronization. All calls should include `gofuncy.WithName()` for tracing labels.
 
 ## Key Design Rules
 
-- `Subscribe` always blocks until ctx is cancelled — run in a goroutine
+- `Subscribe` blocks until ctx is cancelled or a terminal error ends it (e.g. a deleted JetStream ephemeral consumer) —
+  run in a goroutine
 - `ReadySubscriber[T]` adds `SubscribeWithReady(ctx, subject, handler, ready)`. Every transport implements it; the
   package-level `SubscribeWithReady` helper falls back to `Subscribe` (calling `ready()` first) for third-party
-  subscribers. `ready` fires at most once, only on successful registration, never after the call returns. Sequence
+  subscribers. `ready` fires at most once, only on successful registration, never after the call returns
+  (the fallback breaks this: it fires `ready` even if `Subscribe` then fails). An error after `ready` means the
+  subscription was lost later (e.g. a deleted ephemeral JetStream consumer) or cleanup on cancel failed (e.g. NATS
+  unsubscribe on a closed connection). Sequence
   publishes on it — never on `time.Sleep`. NATS `Responder` has the analogous `ServeWithReady`
 - Transport constructors do not own connections — caller connects and closes
-- `Publisher.Close` on `chan/` is a no-op; caller owns inner publishers
+- `Close` is a no-op on all transports; the caller owns connections and inner publishers
 - Non-nil error from handler signals failure; semantics are transport-specific
-- `Bus[T]` is internal to `pkg/channel/` — not a cross-cutting interface
+- `Bus[T]` is internal to `transport/channel/` — not a cross-cutting interface

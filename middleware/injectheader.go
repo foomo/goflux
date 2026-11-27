@@ -8,11 +8,13 @@ import (
 
 // InjectMessageID returns a [goflux.Middleware] that reads the message ID from the
 // message's [goflux.Header] (using [goflux.MessageIDHeader] as the key) and injects it into
-// the context via [goflux.WithMessageID].
+// the context via [goflux.WithMessageID], so messages published from the
+// handler carry it.
 //
-// Push-based transports and the [goflux.Processor] do this automatically. This
-// middleware is for handler chains that bypass built-in injection — for example,
-// when composing handlers directly with [goflux.Subscriber.Subscribe].
+// Transports expose the publisher's message ID as [goflux.Message.ID], not in
+// msg.Header. Use this middleware only when a publisher sets
+// [goflux.MessageIDHeader] as a goflux header via [goflux.WithHeader]; to
+// forward [goflux.Message.ID], use [ForwardMessageID].
 func InjectMessageID[T any]() goflux.Middleware[T] {
 	return func(next goflux.Handler[T]) goflux.Handler[T] {
 		return func(ctx context.Context, msg goflux.Message[T]) error {
@@ -25,17 +27,23 @@ func InjectMessageID[T any]() goflux.Middleware[T] {
 	}
 }
 
-// ForwardMessageID returns a [goflux.Middleware] that preserves the message ID
-// from the incoming context through the handler chain. Use this with pipe's
+// ForwardMessageID returns a [goflux.Middleware] that puts the received
+// [goflux.Message.ID] into the context via [goflux.WithMessageID], so messages
+// published from the handler carry the same ID. Use this with pipe's
 // [pipe.WithMiddleware] to forward message IDs across pipe stages.
 //
-// Unlike [InjectMessageID] (which reads the ID from message headers set by
-// transports), ForwardMessageID reads from context — suitable for in-process
-// handler chains where the ID is already in context.
+// Transports never forward the ID on their own. On JetStream the ID is also
+// the Nats-Msg-Id used for deduplication: a forwarded message that lands in
+// the same stream as the received one, or several messages published with
+// the same forwarded ID (for example by [pipe.NewFlatMap]), are dropped as
+// duplicates within the stream's Duplicates window.
+//
+// [pipe.WithMiddleware]: https://pkg.go.dev/github.com/foomo/goflux/pipe#WithMiddleware
+// [pipe.NewFlatMap]: https://pkg.go.dev/github.com/foomo/goflux/pipe#NewFlatMap
 func ForwardMessageID[T any]() goflux.Middleware[T] {
 	return func(next goflux.Handler[T]) goflux.Handler[T] {
 		return func(ctx context.Context, msg goflux.Message[T]) error {
-			if id := goflux.MessageID(ctx); id != "" {
+			if id := msg.ID; id != "" {
 				ctx = goflux.WithMessageID(ctx, id)
 			}
 
@@ -48,8 +56,8 @@ func ForwardMessageID[T any]() goflux.Middleware[T] {
 // the context via [goflux.WithHeader]. Downstream code can read it with
 // [goflux.HeaderFromContext].
 //
-// Push-based transports and the [goflux.Processor] do this automatically. This
-// middleware is for handler chains that bypass built-in injection.
+// No transport does this automatically, so use this middleware when
+// downstream code reads [goflux.HeaderFromContext].
 func InjectHeader[T any]() goflux.Middleware[T] {
 	return func(next goflux.Handler[T]) goflux.Handler[T] {
 		return func(ctx context.Context, msg goflux.Message[T]) error {

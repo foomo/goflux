@@ -18,9 +18,9 @@ export default defineConfig({
 		outline: [2, 4],
 		nav: [
 			{ text: 'Guide', link: '/guide/introduction' },
-			{ text: 'Patterns', link: '/guide/patterns/fire-and-forget' },
-			{ text: 'Transports', link: '/transports/channel' },
-			{ text: 'Reference', link: '/reference/' },
+			{ text: 'Patterns', link: '/guide/patterns/' },
+			{ text: 'Transports', link: '/transports/' },
+			{ text: 'API', link: 'https://pkg.go.dev/github.com/foomo/goflux' },
 		],
 		sidebar: [
 			{
@@ -29,11 +29,13 @@ export default defineConfig({
 					{ text: 'Introduction', link: '/guide/introduction' },
 					{ text: 'Getting Started', link: '/guide/getting-started' },
 					{ text: 'Core Concepts', link: '/guide/core-concepts' },
-					{ text: 'goflow Integration', link: '/guide/goflow-integration' },
+					{ text: 'Migrating to v0.12', link: '/guide/migration' },
 				],
 			},
 			{
 				text: 'Patterns',
+				link: '/guide/patterns/',
+				collapsed: true,
 				items: [
 					{ text: 'Fire & Forget', link: '/guide/patterns/fire-and-forget' },
 					{ text: 'At-Least-Once', link: '/guide/patterns/at-least-once' },
@@ -43,10 +45,13 @@ export default defineConfig({
 					{ text: 'Fan-Out & Fan-In', link: '/guide/patterns/fan-out-fan-in' },
 					{ text: 'Stream Processing', link: '/guide/patterns/stream-processor' },
 					{ text: 'Headers', link: '/guide/patterns/headers' },
+					{ text: 'HTTP Ingest', link: '/guide/patterns/http-ingest' },
 				],
 			},
 			{
 				text: 'Transports',
+				link: '/transports/',
+				collapsed: true,
 				items: [
 					{ text: 'Channel', link: '/transports/channel' },
 					{ text: 'NATS', link: '/transports/nats' },
@@ -57,21 +62,18 @@ export default defineConfig({
 			},
 			{
 				text: 'Composition',
+				collapsed: true,
 				items: [
 					{ text: 'Middleware', link: '/middleware/' },
 					{ text: 'Pipeline', link: '/pipeline/' },
 				],
 			},
 			{
-				text: 'Observability',
+				text: 'Integrations',
+				collapsed: true,
 				items: [
-					{ text: 'Telemetry', link: '/telemetry/' },
-				],
-			},
-			{
-				text: 'API',
-				items: [
-					{ text: 'Reference', link: '/reference/' },
+					{ text: 'goflow', link: '/integrations/goflow' },
+					{ text: 'OpenTelemetry', link: '/integrations/opentelemetry' },
 				],
 			},
 			{

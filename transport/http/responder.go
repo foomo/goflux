@@ -50,7 +50,7 @@ func NewResponder[Req, Resp any](
 	}
 }
 
-// Serve registers the handler for POST {basePath}/{nats}. The call blocks
+// Serve registers the handler for POST {basePath}/{subject}. The call blocks
 // until ctx is cancelled.
 func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handler goflux.RequestHandler[Req, Resp]) error {
 	r.mux.HandleFunc(r.basePath+"/"+subject, func(w http.ResponseWriter, httpReq *http.Request) {
@@ -83,10 +83,6 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 
 		msgCtx := r.tel.ExtractContext(httpReq.Context(), propagation.HeaderCarrier(httpReq.Header))
 
-		if id := httpReq.Header.Get(goflux.MessageIDHeader); id != "" {
-			msgCtx = goflux.WithMessageID(msgCtx, id)
-		}
-
 		_ = r.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
 			sp := trace.SpanFromContext(ctx)
 			sp.SetAttributes(
@@ -118,7 +114,7 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 			_, _ = w.Write(respBody)
 
 			return nil
-		})
+		}, goflux.WithProcessMessageID(httpReq.Header.Get(goflux.MessageIDHeader)))
 	})
 
 	<-ctx.Done()

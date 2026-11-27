@@ -20,7 +20,11 @@ type Header map[string][]string
 
 Attach headers to outgoing messages by storing them in the context with `goflux.WithHeader`:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/headers.svg" alt="The publisher reads X-Tenant-ID from the context header; NATS and HTTP carry it as X-Goflux-X-Tenant-ID; the subscriber strips the prefix and the handler reads X-Tenant-ID from msg.Header"></div>
+
+```go [Code]
 package main
 
 import (
@@ -56,6 +60,8 @@ func main() {
 }
 ```
 
+:::
+
 ## Reading Headers in a Handler
 
 Headers arrive on `msg.Header`:
@@ -89,11 +95,11 @@ _ = pub.Publish(ctx, "orders.created", event)
 
 ### NATS and JetStream
 
-Headers from the context are merged directly into the NATS message headers. On the subscriber side, the full NATS header map is exposed as `msg.Header`.
+goflux headers are sent as NATS headers with the `X-Goflux-` prefix, like on HTTP. The subscriber extracts only the prefixed keys, strips the prefix, and exposes them as `msg.Header`. Trace context and message ID headers are not part of `msg.Header`.
 
 ```go
-// Publisher side: goflux.Header values are added to nats.Header
-// Subscriber side: msg.Header contains the full nats.Header
+// Publisher sends: X-Goflux-X-Tenant-ID: acme
+// Subscriber receives: msg.Header = {"X-Tenant-ID": ["acme"]}
 ```
 
 ### HTTP
@@ -101,15 +107,18 @@ Headers from the context are merged directly into the NATS message headers. On t
 goflux headers are prefixed with `X-Goflux-` when sent as HTTP headers. The subscriber strips the prefix when extracting them back into `msg.Header`.
 
 ```go
-// Publisher sends: X-Goflux-X-Tenant-ID: acme
-// Subscriber receives: msg.Header = {"X-Tenant-ID": ["acme"]}
+// Publisher sends: X-Goflux-X-Tenant-ID: acme (canonicalized to X-Goflux-X-Tenant-Id)
+// Subscriber receives: msg.Header = {"X-Tenant-Id": ["acme"]}
+// msg.Header.Get("X-Tenant-ID") still returns "acme" (case-insensitive fallback)
 ```
+
+HTTP changes the case of header keys, so read headers with `Get` instead of indexing the map.
 
 This prefixing avoids collisions with standard HTTP headers and transport-level headers (Content-Type, trace context, etc.).
 
 ## Automatic Propagation
 
-Trace context (W3C Trace Context) and message ID (`X-Message-ID`) are propagated automatically by the transports. They do not flow through the `Header` field -- they use dedicated context keys and transport-specific mechanisms:
+Trace context (W3C Trace Context) and message ID (`X-Message-ID`) are sent automatically by all transports (the in-process channel transport passes them with the message instead of as headers). They do not flow through the `Header` field -- they use dedicated mechanisms:
 
 ```go
 // Message ID — set via context, not Header.
@@ -117,7 +126,9 @@ ctx = goflux.WithMessageID(ctx, "msg-abc-123")
 pub.Publish(ctx, "events.created", event)
 
 // On the subscriber side:
-id := goflux.MessageID(ctx) // "msg-abc-123"
+id := msg.ID // "msg-abc-123"
 ```
+
+Trace context flows on to messages published from the handler; the message ID does not (see [Message ID](/integrations/opentelemetry#message-id)).
 
 You do not need to manually add trace context or message IDs to the `Header` map.

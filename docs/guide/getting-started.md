@@ -2,30 +2,32 @@
 
 ## Prerequisites
 
-- **Go 1.22** or later
+- **Go 1.27** or later
 
 ## Installation
 
-Install the core library:
+Install the core library. It includes the in-process channel transport (`transport/channel`) and the HTTP transport (`transport/http`):
 
 ```sh
 go get github.com/foomo/goflux
 ```
 
-For a specific transport, add its submodule:
+The NATS transports are separate modules:
 
 ```sh
-go get github.com/foomo/goflux/transport/channel   # in-process channels
 go get github.com/foomo/goflux/transport/nats       # NATS core
 go get github.com/foomo/goflux/transport/jetstream  # NATS JetStream
-go get github.com/foomo/goflux/transport/http       # HTTP POST
 ```
 
 ## Fire-and-Forget with Channels
 
 The channel transport has zero external dependencies -- no broker, no network. It is a good starting point and useful for tests.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/publish-subscribe.svg" alt="The publisher sends m1, m2, m3 through the transport on orders.created; the subscriber&#39;s handler receives each one"></div>
+
+```go [Code]
 package main
 
 import (
@@ -49,15 +51,14 @@ func main() {
 	// Create the in-process bus, publisher, and subscriber.
 	bus := channel.NewBus[OrderEvent]()
 	pub := channel.NewPublisher(bus)
-	sub, err := channel.NewSubscriber(bus, 8) // bufSize controls backpressure
-	if err != nil {
-		panic(err)
-	}
+	sub := channel.NewSubscriber(bus, 8) // bufSize controls backpressure
 
 	// Define a handler -- same signature regardless of transport.
+	received := make(chan struct{})
 	handler := func(ctx context.Context, msg goflux.Message[OrderEvent]) error {
 		fmt.Printf("received: subject=%s order=%s status=%s\n",
 			msg.Subject, msg.Payload.OrderID, msg.Payload.Status)
+		close(received)
 		return nil
 	}
 
@@ -81,11 +82,15 @@ func main() {
 		panic(err)
 	}
 
+	// Publish returns once the message is buffered; wait for the handler.
+	<-received
 	cancel()
 	<-done
 	// Output: received: subject=orders order=ORD-42 status=confirmed
 }
 ```
+
+:::
 
 The handler is a `goflux.Handler[OrderEvent]` -- a function with the signature `func(ctx context.Context, msg goflux.Message[T]) error`. This signature is the same for every transport.
 
@@ -93,7 +98,11 @@ The handler is a `goflux.Handler[OrderEvent]` -- a function with the signature `
 
 The handler does not change. Only the import and constructor differ:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/channel-vs-nats.svg" alt="With channels, m1 stays a Go value inside one process. With NATS, the publisher encodes m1, the NATS server delivers the bytes to every subscribing service, and each service decodes m1"></div>
+
+```go [Code]
 package main
 
 import (
@@ -123,7 +132,7 @@ func main() {
 	defer conn.Drain()
 
 	// Create publisher and subscriber with a JSON encoder/decoder.
-	codec := jsoncodec.New[OrderEvent]()
+	codec := jsoncodec.NewCodec[OrderEvent]()
 	pub := gofluxnats.NewPublisher(conn, codec.Encode)
 	sub := gofluxnats.NewSubscriber(conn, codec.Decode)
 
@@ -144,6 +153,8 @@ func main() {
 	_ = pub.Publish(ctx, "orders", OrderEvent{OrderID: "ORD-42", Status: "confirmed"})
 }
 ```
+
+:::
 
 See [Subscriber Readiness](./core-concepts.md#subscriber-readiness) for why this matters and what the guarantee covers.
 

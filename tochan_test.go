@@ -19,7 +19,7 @@ func ExampleToChan() {
 	bus := channel.NewBus[string]()
 	pub := channel.NewPublisher(bus)
 
-	sub, _ := channel.NewSubscriber(bus, 1)
+	sub := channel.NewSubscriber(bus, 1)
 
 	ch := goflux.ToChan[string](ctx, sub, "test", 4)
 
@@ -39,8 +39,7 @@ func TestToChan_closesOnCancel(t *testing.T) {
 	bus := channel.NewBus[string]()
 	pub := channel.NewPublisher(bus)
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	require.NoError(t, err)
+	sub := channel.NewSubscriber(bus, 1)
 
 	ch := goflux.ToChan[string](ctx, sub, "test", 1)
 

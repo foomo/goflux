@@ -9,7 +9,7 @@ The two libraries connect via bridge functions:
 
 ## Example: HTTP → Filter → Log → JetStream Fan-Out
 
-This example receives webhook events via HTTP, filters out low-priority events, logs each accepted event, and publishes to two JetStream streams (archive and notifications).
+This example receives webhook events via HTTP, filters out low-priority events, logs each accepted event, and publishes to two JetStream streams (archive and notifications). It assumes streams that accept `archive.>` and `notify.>`.
 
 ```go
 package main
@@ -66,14 +66,23 @@ func main() {
 		return
 	}
 
-	archivePub := gofluxjs.NewPublisher[WebhookEvent](js, codec.Encode)
-	notifyPub := gofluxjs.NewPublisher[WebhookEvent](js, codec.Encode)
+	pub := gofluxjs.NewPublisher[WebhookEvent](js, codec.Encode)
+
+	// FromStream publishes each message to msg.Subject, so a branch rewrites
+	// the subject to route its messages to its own stream.
+	toSubject := func(subject string) func(context.Context, goflux.Message[WebhookEvent]) (goflux.Message[WebhookEvent], error) {
+		return func(_ context.Context, msg goflux.Message[WebhookEvent]) (goflux.Message[WebhookEvent], error) {
+			msg.Subject = subject
+			return msg, nil
+		}
+	}
 
 	// ---------------------------------------------------------------
 	// 2. Bridge HTTP subscriber into a goflow stream
 	// ---------------------------------------------------------------
 
-	stream := bridge.ToStream[WebhookEvent](ctx, httpSub, "webhooks.>", 64)
+	// HTTP subjects are literal paths: this serves POST /webhooks.
+	stream := bridge.ToStream[WebhookEvent](ctx, httpSub, "webhooks", 64)
 
 	// ---------------------------------------------------------------
 	// 3. Apply goflow operators
@@ -102,12 +111,12 @@ func main() {
 
 	// Branch 1: archive stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return bridge.FromStream(streams[0], archivePub)
+		return bridge.FromStream(goflow.Map(streams[0], toSubject("archive.webhooks")), pub)
 	}, gofuncy.WithName("archive-publisher"))
 
 	// Branch 2: notification stream.
 	gofuncy.Go(ctx, func(ctx context.Context) error {
-		return bridge.FromStream(streams[1], notifyPub)
+		return bridge.FromStream(goflow.Map(streams[1], toSubject("notify.webhooks")), pub)
 	}, gofuncy.WithName("notify-publisher"))
 
 	// ---------------------------------------------------------------
@@ -116,7 +125,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: httpSub,
+		Handler: httpSub.Mux(),
 	}
 
 	gofuncy.Go(ctx, func(ctx context.Context) error {
@@ -136,39 +145,7 @@ func main() {
 
 ## What happens at runtime
 
-```
-HTTP POST /webhooks/orders.new
-         │
-         ▼
-   ┌─────────────┐
-   │  ToStream    │  HTTP subscriber → goflow.Stream
-   └──────┬──────┘
-          │
-          ▼
-   ┌─────────────┐
-   │   Filter     │  Drop priority < 3
-   └──────┬──────┘
-          │
-          ▼
-   ┌─────────────┐
-   │    Peek      │  Log accepted events
-   └──────┬──────┘
-          │
-          ▼
-   ┌─────────────┐
-   │    Tee(2)    │  Broadcast to 2 streams
-   └──┬──────┬───┘
-      │      │
-      ▼      ▼
-   ┌─────┐ ┌─────┐
-   │From │ │From │
-   │Strm │ │Strm │  Publish to JetStream
-   └──┬──┘ └──┬──┘
-      │       │
-      ▼       ▼
-  archive   notify
-  stream    stream
-```
+<img src="../diagrams/goflow-integration.svg" alt="Webhook events p5, p1, p4 go through ToStream, Filter drops p1 with priority below 3, Peek logs, Tee(2) copies p5 and p4 to two FromStream publishers for archive and notify">
 
 ## Key concepts
 
@@ -197,23 +174,33 @@ HTTP POST /webhooks/orders.new
 
 Replace `Tee` with `FanOut` to distribute messages across publishers instead of copying:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/goflow-fanout.svg" alt="FanOut(2) sends p5 and p7 to the archive publisher and p4 and p3 to the notify publisher; each message goes to one publisher only"></div>
+
+```go [Code]
 workers := logged.FanOut(2)
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return bridge.FromStream(workers[0], archivePub)
+    return bridge.FromStream(goflow.Map(workers[0], toSubject("archive.webhooks")), pub)
 }, gofuncy.WithName("worker-0"))
 
 gofuncy.Go(ctx, func(ctx context.Context) error {
-    return bridge.FromStream(workers[1], notifyPub)
+    return bridge.FromStream(goflow.Map(workers[1], toSubject("notify.webhooks")), pub)
 }, gofuncy.WithName("worker-1"))
 ```
+
+:::
 
 ### Adding deduplication
 
 Insert `Distinct` before the fan-out to drop duplicate events:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/goflow-distinct.svg" alt="Distinct by event ID passes e1, e2, e3 and drops the second e1 before Tee"></div>
+
+```go [Code]
 deduped := logged.Distinct(func(msg goflux.Message[WebhookEvent]) string {
     return msg.Payload.ID
 })
@@ -221,12 +208,18 @@ deduped := logged.Distinct(func(msg goflux.Message[WebhookEvent]) string {
 streams := deduped.Tee(2)
 ```
 
+:::
+
 ### Merging multiple inbound transports
 
 Use `ToStream` on each subscriber and `goflow.FanIn` to merge before processing:
 
-```go
-httpStream := bridge.ToStream[Event](ctx, httpSub, "events.>", 16)
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/goflow-fanin.svg" alt="ToStream turns the HTTP subscriber and the NATS subscriber into two streams; FanIn merges h1, n1, h2, n2 into one stream in arrival order"></div>
+
+```go [Code]
+httpStream := bridge.ToStream[Event](ctx, httpSub, "events", 16) // HTTP: literal path, no wildcards
 natsStream := bridge.ToStream[Event](ctx, natsSub, "events.>", 16)
 
 merged := goflow.FanIn([]goflow.Stream[goflux.Message[Event]]{httpStream, natsStream})
@@ -235,11 +228,17 @@ merged := goflow.FanIn([]goflow.Stream[goflux.Message[Event]]{httpStream, natsSt
 merged.Filter(...).Peek(...).Process(10, fn)
 ```
 
+:::
+
 ### Bounded concurrency with ack
 
 Use `Process` for a worker pool that explicitly acknowledges each message:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/goflow-process.svg" alt="Process(8, fn) runs messages on up to 8 workers at once; fn acks t1, t2 and t4 and naks t3 for redelivery"></div>
+
+```go [Code]
 stream := bridge.ToStream[Task](ctx, jsSub, "tasks.>", 32)
 
 stream.Process(8, func(ctx context.Context, msg goflux.Message[Task]) error {
@@ -249,3 +248,5 @@ stream.Process(8, func(ctx context.Context, msg goflux.Message[Task]) error {
     return msg.Ack()
 })
 ```
+
+:::

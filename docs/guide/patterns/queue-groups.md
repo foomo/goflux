@@ -10,7 +10,11 @@ When multiple subscribers join the same queue group on the same subject, NATS di
 
 Use `gofluxnats.WithQueueGroup` to join a named queue group:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/queue-groups.svg" alt="Workers A and B share the queue group workers and split t1 to t4; Audit has no queue group and gets every message"></div>
+
+```go [Code]
 package main
 
 import (
@@ -67,6 +71,8 @@ func main() {
 	cancel()
 }
 ```
+
+:::
 
 ## Multiple Instances
 

@@ -21,10 +21,7 @@ func ExampleTopic() {
 
 	bus := channel.NewBus[Event]()
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	if err != nil {
-		panic(err)
-	}
+	sub := channel.NewSubscriber(bus, 1)
 
 	topic := goflux.Topic[Event]{
 		Publisher:  channel.NewPublisher(bus),
@@ -54,8 +51,7 @@ func TestBoundTopic(t *testing.T) {
 	bus := channel.NewBus[string]()
 	pub := channel.NewPublisher(bus)
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	require.NoError(t, err)
+	sub := channel.NewSubscriber(bus, 1)
 
 	bt := goflux.BindTopic[string](pub, sub, "bound-nats")
 

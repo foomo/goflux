@@ -41,13 +41,21 @@ type ReadySubscriber[T any] interface {
 	//
 	// ready is called at most once, and never after SubscribeWithReady returns.
 	// If registration fails, SubscribeWithReady returns the error without
-	// calling ready. ready must not block.
+	// calling ready. An error returned after ready was called means the
+	// subscription was established, and then either lost (for example a
+	// deleted JetStream ephemeral consumer) or not cleaned up on ctx
+	// cancellation (for example a NATS unsubscribe on a closed connection).
+	// ready must not block.
 	SubscribeWithReady(ctx context.Context, subject string, handler Handler[T], ready func()) error
 }
 
 // SubscribeWithReady subscribes via [ReadySubscriber.SubscribeWithReady] when
 // sub supports it, and otherwise falls back to [Subscriber.Subscribe], invoking
 // ready immediately before subscribing.
+//
+// The fallback breaks the "ready is not called if registration fails" part of
+// the [ReadySubscriber] contract: ready has already fired when Subscribe
+// returns a registration error.
 //
 // The fallback is best-effort and inherently racy — it exists so third-party
 // Subscriber implementations keep working, not to provide a guarantee. All

@@ -21,7 +21,7 @@ func NewPublisher[T any](conn *nats.Conn, encoder goencode.Encoder[T, []byte], o
 
 `Publish` encodes the value with the encoder, injects OTel context and goflux headers into NATS message headers, and publishes to the subject.
 
-`Close` calls `conn.Drain()`.
+`Close` is a no-op. The caller owns the `*nats.Conn`.
 
 ## Subscriber
 
@@ -41,30 +41,30 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 Use `SubscribeWithReady` whenever a publish is sequenced after a subscribe. With plain `Subscribe` the publish can reach the server first and the message is lost without a trace.
 :::
 
-`Close` calls `conn.Drain()`.
+`Close` is a no-op. The caller owns the `*nats.Conn`.
 
 ## Requester
 
 ```go
 func NewRequester[Req, Resp any](
     conn *nats.Conn,
-    reqCodec goencode.Codec[Req],
-    respCodec goencode.Codec[Resp],
+    reqCodec goencode.Codec[Req, []byte],
+    respCodec goencode.Codec[Resp, []byte],
     opts ...Option,
 ) *Requester[Req, Resp]
 ```
 
 `Request` encodes the request, publishes it to the subject using NATS request-reply, waits for a response, decodes it, and returns the result. The call respects context cancellation.
 
-`Close` calls `conn.Drain()`.
+`Close` is a no-op. The caller owns the `*nats.Conn`.
 
 ## Responder
 
 ```go
 func NewResponder[Req, Resp any](
     conn *nats.Conn,
-    reqCodec goencode.Codec[Req],
-    respCodec goencode.Codec[Resp],
+    reqCodec goencode.Codec[Req, []byte],
+    respCodec goencode.Codec[Resp, []byte],
     opts ...Option,
 ) *Responder[Req, Resp]
 ```
@@ -77,7 +77,7 @@ func (r *Responder[Req, Resp]) ServeWithReady(ctx context.Context, subject strin
 
 `ServeWithReady` invokes `ready` once the server has acknowledged the responder's subscription, using the same `Flush` round-trip as the Subscriber. Without it, a request issued immediately after `Serve` starts can be dropped -- which the caller sees only as a request timeout, never naming the real cause.
 
-`Close` calls `conn.Drain()`.
+`Close` is a no-op. The caller owns the `*nats.Conn`.
 
 ## Options
 
@@ -88,12 +88,12 @@ func (r *Responder[Req, Resp]) ServeWithReady(ctx context.Context, subject strin
 
 ## Behavior
 
-- **Caller owns the connection** -- the caller is responsible for connecting and closing `*nats.Conn`. `Close()` on Publisher/Subscriber calls `conn.Drain()`.
-- **Fire-and-forget** -- core NATS has no ack/nak. `Message.Acker` is nil. A message published with no matching subscriber is dropped silently, which is why readiness matters.
+- **Caller owns the connection** -- the caller is responsible for connecting and closing `*nats.Conn`. `Close()` on all types is a no-op.
+- **Fire-and-forget** -- core NATS has no ack/nak. `msg.HasAcker()` returns false and the ack methods are no-ops. A message published with no matching subscriber is dropped silently, which is why readiness matters.
 - **Readiness via flush** -- `SubscribeWithReady` and `ServeWithReady` issue a `Flush` round-trip so `ready` means "the server registered the subscription", not "a frame was buffered locally". `Flush` is used rather than `FlushWithContext` because the subscription's lifetime context legitimately has no deadline; the connection timeout bounds the call instead.
 - **OTel context propagation** -- uses span links (not parent-child) because async messaging is temporally decoupled. The producer's span context is extracted via `ExtractSpanContext` and attached as a link on the consumer span.
 - **Header carrier** -- a custom `natsHeaderCarrier` preserves raw key casing (unlike `http.Header` which canonicalizes keys), ensuring W3C TraceContext lowercase keys survive the round-trip.
-- **Message ID** -- if `goflux.MessageID(ctx)` is set, it is propagated via the `X-Message-ID` header.
+- **Message ID** -- if `goflux.WithMessageID` is set on the publish context, the ID is sent via the `X-Message-ID` header. The subscriber exposes it as `msg.ID`; it is not put into the handler context.
 
 ## Pub/Sub Example
 
@@ -105,7 +105,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
@@ -161,7 +161,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	"github.com/nats-io/nats.go"
 )

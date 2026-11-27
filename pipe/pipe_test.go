@@ -68,13 +68,11 @@ func TestNew(t *testing.T) {
 
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	require.NoError(t, err)
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := make(chan goflux.Message[Event], 1)
 
@@ -107,13 +105,11 @@ func TestNew_filterRejectsReturnsNil(t *testing.T) {
 
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	require.NoError(t, err)
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := make(chan goflux.Message[Event], 1)
 
@@ -180,13 +176,11 @@ func TestNew_withMiddleware(t *testing.T) {
 
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	require.NoError(t, err)
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := make(chan goflux.Message[Event], 1)
 
@@ -235,13 +229,11 @@ func TestNewMap(t *testing.T) {
 
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	require.NoError(t, err)
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Summary]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := make(chan goflux.Message[Summary], 1)
 
@@ -306,13 +298,11 @@ func TestNewFlatMap(t *testing.T) {
 
 	srcBus := channel.NewBus[Order]()
 	srcPub := channel.NewPublisher(srcBus)
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	require.NoError(t, err)
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[LineItem]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	require.NoError(t, err)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := make(chan goflux.Message[LineItem], 4)
 
@@ -420,18 +410,12 @@ func ExampleNew() {
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
 
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
 
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -462,18 +446,12 @@ func ExampleNewMap() {
 	srcBus := channel.NewBus[Event]()
 	srcPub := channel.NewPublisher(srcBus)
 
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[Summary]()
 	dstPub := channel.NewPublisher(dstBus)
 
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	mapFn := func(_ context.Context, msg goflux.Message[Event]) (Summary, error) {
 		return Summary{Label: msg.Payload.Name}, nil
@@ -506,18 +484,12 @@ func ExampleNewFlatMap() {
 	srcBus := channel.NewBus[Order]()
 	srcPub := channel.NewPublisher(srcBus)
 
-	srcSub, err := channel.NewSubscriber(srcBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	srcSub := channel.NewSubscriber(srcBus, 1)
 
 	dstBus := channel.NewBus[LineItem]()
 	dstPub := channel.NewPublisher(dstBus)
 
-	dstSub, err := channel.NewSubscriber(dstBus, 1)
-	if err != nil {
-		panic(err)
-	}
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	flatMapFn := func(_ context.Context, msg goflux.Message[Order]) ([]LineItem, error) {
 		items := make([]LineItem, len(msg.Payload.Items))

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 150" width="720" height="150" role="img" aria-label="Chain(AutoAck, InjectMessageID)(handler): m1 passes AutoAck, then InjectMessageID, then the handler; nil returns through both and AutoAck acks">
+<style>
+text{font:600 14px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central;fill:#303446}
+.op{fill:#c6d0f5}
+.sub{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#a5adce}
+.lbl{font:500 13px ui-sans-serif,system-ui,sans-serif;fill:#838ba7}
+.s{text-anchor:start}.e{text-anchor:end}
+.in{fill:#8caaee}.mid{fill:#ca9ee6}.out{fill:#a6d189}.err{fill:#e78284}
+.box{fill:#414559;stroke:#838ba7;stroke-width:1.5}
+.wire{stroke:#838ba7;stroke-width:1.5;stroke-dasharray:4 4;fill:none}
+.zone{fill:none;stroke:#626880;stroke-width:1.5;stroke-dasharray:8 5}
+@media (prefers-reduced-motion:reduce){g{animation:none!important}.k{opacity:1}.h{opacity:0}}
+</style>
+<style>
+@keyframes t0{0.000%{transform:translate(0.0px,0.0px);opacity:1}3.191%{transform:translate(0.0px,0.0px);opacity:1}9.309%{transform:translate(115.0px,0.0px);opacity:1}11.702%{transform:translate(115.0px,0.0px);opacity:1}24.468%{transform:translate(355.0px,0.0px);opacity:1}26.862%{transform:translate(355.0px,0.0px);opacity:1}39.628%{transform:translate(595.0px,0.0px);opacity:1}41.622%{transform:translate(595.0px,0.0px);opacity:0}95.213%{transform:translate(595.0px,0.0px);opacity:0}97.606%{transform:translate(595.0px,0.0px);opacity:0}97.686%{transform:translate(0.0px,0.0px);opacity:0}100.000%{transform:translate(0.0px,0.0px);opacity:1}}.t0{animation:t0 12.53s linear infinite}
+@keyframes t1{0.000%{transform:translate(0.0px,0.0px);opacity:0}42.819%{transform:translate(0.0px,0.0px);opacity:0}44.814%{transform:translate(0.0px,0.0px);opacity:1}57.580%{transform:translate(-240.0px,0.0px);opacity:1}59.973%{transform:translate(-240.0px,0.0px);opacity:1}72.739%{transform:translate(-480.0px,0.0px);opacity:1}74.734%{transform:translate(-480.0px,0.0px);opacity:0}95.213%{transform:translate(-480.0px,0.0px);opacity:0}97.606%{transform:translate(-480.0px,0.0px);opacity:0}97.686%{transform:translate(0.0px,0.0px);opacity:0}100.000%{transform:translate(0.0px,0.0px);opacity:0}}.t1{animation:t1 12.53s linear infinite}
+@keyframes t2{0.000%{transform:translate(115.0px,0.0px);opacity:0}75.133%{transform:translate(115.0px,0.0px);opacity:0}77.128%{transform:translate(115.0px,0.0px);opacity:1}83.245%{transform:translate(0.0px,0.0px);opacity:1}95.213%{transform:translate(0.0px,0.0px);opacity:1}97.606%{transform:translate(0.0px,0.0px);opacity:0}97.686%{transform:translate(115.0px,0.0px);opacity:0}100.000%{transform:translate(115.0px,0.0px);opacity:0}}.t2{animation:t2 12.53s linear infinite}
+</style>
+<path class="wire" d="M225.0 45.0L315.0 45.0"/><path class="wire" d="M225.0 105.0L315.0 105.0"/><path class="wire" d="M465.0 45.0L555.0 45.0"/><path class="wire" d="M465.0 105.0L555.0 105.0"/><path class="wire" d="M55.0 45.0L75.0 45.0"/><path class="wire" d="M55.0 105.0L75.0 105.0"/><g class="t0 k"><rect class="in" x="16.6" y="30.0" width="36.8" height="30" rx="15"/><text x="35.0" y="45.0">m1</text></g><g class="t1 h"><rect class="out" x="607.4" y="90.0" width="45.2" height="30" rx="15"/><text x="630.0" y="105.0">nil</text></g><g class="t2 k"><rect class="out" x="12.4" y="90.0" width="45.2" height="30" rx="15"/><text x="35.0" y="105.0">ack</text></g><rect class="box" x="75.0" y="25.0" width="150.0" height="100.0" rx="10"/><text class="op" x="150.0" y="66.0">AutoAck</text><text class="sub" x="150.0" y="85.0">ack on nil</text><rect class="box" x="315.0" y="25.0" width="150.0" height="100.0" rx="10"/><text class="op" x="390.0" y="66.0">InjectMessageID</text><text class="sub" x="390.0" y="85.0">ID into ctx</text><rect class="box" x="555.0" y="25.0" width="150.0" height="100.0" rx="10"/><text class="op" x="630.0" y="66.0">handler</text><text class="sub" x="630.0" y="85.0">returns nil</text>
+</svg>

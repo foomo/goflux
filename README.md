@@ -21,7 +21,6 @@ Write business logic against core interfaces. Swap transports without touching h
 | **Middleware**         | `Chain`, `AutoAck`, `RetryAck`, `KeepAlive`, `InjectMessageID`, `InjectHeader`, `ForwardMessageID`                                             |
 | **Pipeline Operators** | `pipe.New`, `pipe.NewMap`, `pipe.NewFlatMap`, `ToChan`, `bridge.ToStream`, `bridge.FromStream`, `BindPublisher`, `RetryPublisher` |
 | **Stream Processing**  | Fan-out, fan-in, round-robin, filtering, dedup, throttling via [goflow](https://github.com/foomo/goflow)                          |
-| **Lifecycle**          | `Group` — coordinated startup, fail-fast shutdown for multiple handlers                                                           |
 | **Telemetry**          | OpenTelemetry tracing and metrics built into every transport                                                                      |
 
 ## Supported Patterns
@@ -69,7 +68,7 @@ func main() {
 
   bus := channel.NewBus[string]()
   pub := channel.NewPublisher(bus)
-  sub, _ := channel.NewSubscriber(bus, 1)
+  sub := channel.NewSubscriber(bus, 1)
 
   // Subscribe blocks, so run it in a goroutine. SubscribeWithReady signals once
   // the subscription is live, so the publish below cannot be lost.

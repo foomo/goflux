@@ -3,6 +3,7 @@ package goflux
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/foomo/goflux/semconv/gofluxconv"
@@ -19,6 +20,12 @@ import (
 )
 
 const instrName = "github.com/foomo/goflux"
+
+// lagSource is one subscription's lag, reported under destination.
+type lagSource struct {
+	destination attribute.KeyValue
+	fn          func() int64
+}
 
 // ---------------------------------------------------------------------------
 // Telemetry — constructible, per-instance OTel instrumentation
@@ -38,7 +45,19 @@ type Telemetry struct {
 	processDuration  semconvmsg.ProcessDuration         // goflux.process.duration
 
 	// goflux-specific metrics
-	ackOutcome gofluxconv.AckOutcome // goflux.processor.ack.outcome
+	ackOutcome  gofluxconv.AckOutcome  // goflux.processor.ack.outcome
+	consumerLag gofluxconv.ConsumerLag // goflux.consumer.lag
+
+	// lags holds the registered lag sources, summed per destination attribute
+	// on each collection.
+	lagMu sync.Mutex
+	lags  map[*lagSource]struct{}
+
+	// lagReg is the observeLag callback registration, held only while lag
+	// sources exist. regMu guards it and is never taken by observeLag, so
+	// registering never waits on a running collection that waits on lagMu.
+	regMu  sync.Mutex
+	lagReg metric.Registration
 
 	// destinationTemplate maps a subject to its metric template; nil records
 	// the concrete subject.
@@ -184,6 +203,11 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 		return nil, fmt.Errorf("messaging telemetry: ack outcome: %w", err)
 	}
 
+	t.consumerLag, err = gofluxconv.NewConsumerLag(m)
+	if err != nil {
+		return nil, fmt.Errorf("messaging telemetry: consumer lag: %w", err)
+	}
+
 	return t, nil
 }
 
@@ -236,6 +260,15 @@ type ProcessOption func(*processConfig)
 
 type processConfig struct {
 	linkedSpanCtx trace.SpanContext
+	messageID     string
+}
+
+// WithProcessMessageID sets the received message ID, recorded as the
+// messaging.message.id attribute of the consumer span. Transports pass the ID
+// of the received message here instead of putting it into the handler
+// context, so messages published from the handler do not inherit it.
+func WithProcessMessageID(id string) ProcessOption {
+	return func(c *processConfig) { c.messageID = id }
 }
 
 // WithRemoteSpanContext attaches the given span context as a span link instead
@@ -261,8 +294,8 @@ func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system se
 		msgsemconv.MessagingSystemKey.String(string(system)),
 		msgsemconv.MessagingOperationName(opName),
 	}, t.destinationSpanAttrs(subject)...)
-	if id := MessageID(ctx); id != "" {
-		attrs = append(attrs, msgsemconv.MessagingMessageID(id))
+	if cfg.messageID != "" {
+		attrs = append(attrs, msgsemconv.MessagingMessageID(cfg.messageID))
 	}
 
 	startOpts := []trace.SpanStartOption{
@@ -379,12 +412,57 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 	return err
 }
 
-// RegisterLag registers the goflux.consumer.lag observable gauge.
-// Uses the meter provider that was passed to [NewTelemetry].
-func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int64ObservableGauge, error) {
-	lag, err := gofluxconv.NewConsumerLag(t.mp.Meter(instrName), subject, lagFn)
+// RegisterLag reports lagFn on the goflux.consumer.lag gauge for subject,
+// mapped through [WithDestinationTemplate] when configured. The lag of all
+// registrations with the same destination on this Telemetry is summed;
+// subscribers with separate Telemetry instances report separately, so share
+// one Telemetry to sum across them. Call the returned function when the
+// subscription ends, so the gauge stops reporting it.
+func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) func() {
+	src := &lagSource{
+		destination: t.destinationAttr(subject, t.consumerLag.AttrDestinationName, t.consumerLag.AttrDestinationTemplate),
+		fn:          lagFn,
+	}
 
-	return lag.Inst(), err
+	t.regMu.Lock()
+	defer t.regMu.Unlock()
+
+	t.lagMu.Lock()
+	if t.lags == nil {
+		t.lags = make(map[*lagSource]struct{})
+	}
+
+	t.lags[src] = struct{}{}
+	t.lagMu.Unlock()
+
+	// Register the callback only while sources exist, so a Telemetry that
+	// never reports lag leaves nothing behind on the meter.
+	if t.lagReg == nil && t.consumerLag.Inst() != nil {
+		reg, err := t.mp.Meter(instrName).RegisterCallback(t.observeLag, t.consumerLag.Inst())
+		if err != nil {
+			otel.Handle(fmt.Errorf("messaging telemetry: consumer lag callback: %w", err))
+		} else {
+			t.lagReg = reg
+		}
+	}
+
+	return func() {
+		t.regMu.Lock()
+		defer t.regMu.Unlock()
+
+		t.lagMu.Lock()
+		delete(t.lags, src)
+		empty := len(t.lags) == 0
+		t.lagMu.Unlock()
+
+		if empty && t.lagReg != nil {
+			if err := t.lagReg.Unregister(); err != nil {
+				otel.Handle(fmt.Errorf("messaging telemetry: consumer lag callback: %w", err))
+			}
+
+			t.lagReg = nil
+		}
+	}
 }
 
 // RecordAckOutcome records an acknowledgment outcome (ack, nak, nak_with_delay,
@@ -429,6 +507,24 @@ func (t *Telemetry) ExtractSpanContext(ctx context.Context, carrier propagation.
 
 func secondsSince(start time.Time) float64 {
 	return time.Since(start).Seconds()
+}
+
+// observeLag is the goflux.consumer.lag callback: it sums the registered lag
+// sources per destination.
+func (t *Telemetry) observeLag(_ context.Context, obs metric.Observer) error {
+	t.lagMu.Lock()
+	defer t.lagMu.Unlock()
+
+	sums := make(map[attribute.KeyValue]int64, len(t.lags))
+	for src := range t.lags {
+		sums[src.destination] += src.fn()
+	}
+
+	for destination, lag := range sums {
+		t.consumerLag.Observe(obs, lag, destination)
+	}
+
+	return nil
 }
 
 // destinationAttr returns the template attribute if one is derived for

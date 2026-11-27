@@ -1,4 +1,4 @@
-# Telemetry
+# OpenTelemetry
 
 OpenTelemetry instrumentation is built into goflux transports, not added as middleware. Each transport creates a `Telemetry` instance and calls its recording methods around publish and process operations.
 
@@ -31,10 +31,12 @@ if err != nil {
 
 ## Recording Methods
 
+`messagingconv` is `go.opentelemetry.io/otel/semconv/v1.41.0/messagingconv`.
+
 ### RecordPublish
 
 ```go
-func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
+func (t *Telemetry) RecordPublish(ctx context.Context, subject string, system messagingconv.SystemAttr, fn func(context.Context) error) error
 ```
 
 Opens a **producer** span named `send <subject>` (or `send <template>` when a destination template is derived, `SpanKindProducer`), executes `fn`, then records duration and sent-message counter. The `system` attribute identifies the transport (e.g. `"nats"`, `"http"`).
@@ -42,7 +44,7 @@ Opens a **producer** span named `send <subject>` (or `send <template>` when a de
 ### RecordProcess
 
 ```go
-func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error, opts ...ProcessOption) error
+func (t *Telemetry) RecordProcess(ctx context.Context, subject string, system messagingconv.SystemAttr, fn func(context.Context) error, opts ...ProcessOption) error
 ```
 
 Opens a **consumer** span named `process <subject>` (or `process <template>` when a destination template is derived, `SpanKindConsumer`), executes `fn`, then records duration and consumed-message counter. Pass `WithRemoteSpanContext` to attach the producer span as a link for async transports.
@@ -50,7 +52,7 @@ Opens a **consumer** span named `process <subject>` (or `process <template>` whe
 ### RecordFetch
 
 ```go
-func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system SystemAttr, count int, fn func(context.Context) error) error
+func (t *Telemetry) RecordFetch(ctx context.Context, subject string, system messagingconv.SystemAttr, count int, fn func(context.Context) error) error
 ```
 
 Opens a **consumer** span named `receive <subject>` (or `receive <template>` when a destination template is derived, `SpanKindConsumer`) for pull-based fetch operations. Records the batch message count alongside the standard duration and counter metrics.
@@ -58,7 +60,7 @@ Opens a **consumer** span named `receive <subject>` (or `receive <template>` whe
 ### RecordRequest
 
 ```go
-func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system SystemAttr, fn func(context.Context) error) error
+func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system messagingconv.SystemAttr, fn func(context.Context) error) error
 ```
 
 Opens a **client** span named `send <subject>` (or `send <template>` when a destination template is derived, `SpanKindClient`) for request-reply calls. Records duration and sent-message counter.
@@ -66,10 +68,10 @@ Opens a **client** span named `send <subject>` (or `send <template>` when a dest
 ### RegisterLag
 
 ```go
-func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) (metric.Int64ObservableGauge, error)
+func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) func()
 ```
 
-Registers an observable gauge that periodically reports the number of messages waiting in a subscriber buffer.
+Reports `lagFn` (the number of messages waiting in a subscriber buffer) on the `goflux.consumer.lag` gauge. The lag of all registrations with the same destination on one `Telemetry` is summed, so subjects that share a destination template report one total. Subscribers with separate `Telemetry` instances (the default) report separately and overwrite each other on a shared destination; pass one `Telemetry` to all of them to get the total. Call the returned function when the subscription ends. The channel transport registers it for the subscribed subject in `SubscribeWithReady`.
 
 ## Metrics
 
@@ -84,13 +86,13 @@ All metrics follow OpenTelemetry messaging semantic conventions.
 | `goflux.consumer.lag` | Observable Gauge | Messages waiting in subscriber buffer |
 | `goflux.processor.ack.outcome` | Counter | Ack / nak / nak_with_delay / term outcomes per subject |
 
-Each metric carries `messaging.destination.name` (subject) and `error.type` attributes. With `WithDestinationTemplate`, the send, consume and duration metrics can carry `messaging.destination.template` instead of `messaging.destination.name`.
+The `messaging.*` metrics carry `messaging.destination.name` (subject) and `error.type`. `goflux.processor.ack.outcome` carries `goflux.ack.action`, the destination and `goflux.ack.error` (bool). `goflux.consumer.lag` carries only the destination. With `WithDestinationTemplate`, every metric can carry `messaging.destination.template` instead of `messaging.destination.name`.
 
 ## Metric Cardinality {#metric-cardinality}
 
 Every distinct subject on a metric creates its own time series. Subjects that embed unbounded values, such as `orders.<id>.created`, therefore create one series per ID.
 
-Consumer metrics record the subject passed to `Subscribe`, not each message's subject. A single wildcard subscription such as `orders.*.created` produces one series. Publishers only have the concrete subject, so use `WithDestinationTemplate` to map it to a template:
+Consumer metrics record the subject passed to `Subscribe`, not each message's subject. A single wildcard subscription such as `orders.*.created` produces one series. The exception is `goflux.processor.ack.outcome`: `RetryAck` records each message's concrete subject, so bound it with `WithDestinationTemplate` and `RetryAckWithTelemetry`. Publishers only have the concrete subject, so use `WithDestinationTemplate` to map it to a template:
 
 ```go
 tel, err := goflux.NewTelemetry(
@@ -106,7 +108,7 @@ tel, err := goflux.NewTelemetry(
 
 - A non-empty result is recorded as `messaging.destination.template` in place of `messaging.destination.name`, never both.
 - An empty result keeps `messaging.destination.name` for that call.
-- Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch`, `RecordRequest` and `RecordAckOutcome`. `goflux.consumer.lag` still records the concrete subject.
+- Applies to metrics from `RecordPublish`, `RecordProcess`, `RecordFetch`, `RecordRequest`, `RecordAckOutcome` and `RegisterLag`. `goflux.consumer.lag` sums the lag of all subjects that map to the same template.
 - `middleware.RetryAck` records ack outcomes through its own `Telemetry`; pass the transport's instance with `middleware.RetryAckWithTelemetry` so the same template applies.
 - Also applies to span names: the same template replaces the subject in `{operation} {subject}` when one is derived. Span attributes always keep `messaging.destination.name` (the concrete subject) and additionally set `messaging.destination.template` when a template is derived — never dropping the concrete name.
 - `fn` runs on every recorded operation and must be cheap and safe for concurrent use.
@@ -141,7 +143,7 @@ goflux provides three propagation methods on `Telemetry` for different transport
 func (t *Telemetry) InjectContext(ctx context.Context, carrier propagation.TextMapCarrier)
 ```
 
-Called on the **publish side** to inject the current span context into transport headers (NATS headers, HTTP headers). All transports call this automatically during `Publish`.
+Called on the **publish side** to inject the current span context into transport headers (NATS headers, HTTP headers). The NATS, JetStream and HTTP transports call this automatically during `Publish`. The in-process channel transport has no wire headers: it passes the publish span context with the message and links the process span to it.
 
 ### ExtractContext (synchronous transports)
 
@@ -179,19 +181,22 @@ err := tel.RecordProcess(ctx, subject, system, handler)
 
 ## Message ID {#message-id}
 
-goflux supports an opt-in business-level message ID that is propagated across transports and attached to spans.
+goflux supports an opt-in business-level message ID that identifies one message. It is sent with the message and attached to spans.
 
 ```go
 // Set before publishing
 ctx = goflux.WithMessageID(ctx, "order-42")
+pub.Publish(ctx, "orders.created", event)
 
 // Read in a handler
-id := goflux.MessageID(ctx)
+id := msg.ID // "order-42"
 ```
 
-- Propagated via the `X-Message-ID` header (`goflux.MessageIDHeader`)
+- Sent via the `X-Message-ID` header (`goflux.MessageIDHeader`); the channel transport passes it with the message
 - Attached as `messaging.message.id` span attribute on publish and process spans
 - Purely opt-in: if not set, no header or attribute is added
+- Not inherited: subscribers expose the received ID as `msg.ID` and never put it into the handler context, so messages published from the handler carry no ID unless the handler sets one. To publish with the same ID, use [`middleware.ForwardMessageID`](/middleware/#forwardmessageid). Request-reply responders record the request ID on the process span only.
+- Correlation across messages comes from trace context, not from the message ID
 
 ## Transport System Attributes
 

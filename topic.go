@@ -8,14 +8,14 @@ type Topic[T any] struct {
 }
 
 // BoundTopic bundles a BoundPublisher and BoundSubscriber sharing the same
-// fixed nats. Use it when a service needs to both produce and consume the
-// same message type on a known nats.
+// fixed subject. Use it when a service needs to both produce and consume the
+// same message type on a known subject.
 type BoundTopic[T any] struct {
 	BoundPublisher[T]
 	BoundSubscriber[T]
 }
 
-// BindTopic wraps a Publisher and Subscriber with a fixed nats.
+// BindTopic wraps a Publisher and Subscriber with a fixed subject.
 func BindTopic[T any](pub Publisher[T], sub Subscriber[T], subject string) *BoundTopic[T] {
 	return &BoundTopic[T]{
 		BoundPublisher:  BindPublisher(pub, subject),

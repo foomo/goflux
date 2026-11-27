@@ -2,15 +2,15 @@ package goflux
 
 import "context"
 
-// BoundPublisher publishes to a fixed nats. No nats param needed.
+// BoundPublisher publishes to a fixed subject. No subject param needed.
 type BoundPublisher[T any] interface {
-	// Publish serializes v and delivers it to the bound nats.
+	// Publish serializes v and delivers it to the bound subject.
 	Publish(ctx context.Context, v T) error
 	// Close releases any underlying connections.
 	Close() error
 }
 
-// BindPublisher wraps a Publisher with a fixed nats.
+// BindPublisher wraps a Publisher with a fixed subject.
 func BindPublisher[T any](pub Publisher[T], subject string) BoundPublisher[T] {
 	return &boundPublisher[T]{pub: pub, subject: subject}
 }

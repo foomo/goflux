@@ -16,10 +16,16 @@ func New[T any](pub Publisher[T], opts ...Option[T]) Handler[T]
 
 Returns a `Handler[T]` that forwards every accepted message to `pub`, preserving the original subject. The middleware chain runs first, then the filter; a filtered message returns `nil` to the transport (ack). Publish errors are returned to the subscriber as-is. The dead-letter observer is called on publish error for logging/alerting.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/pipe-new.svg" alt="pipe.New with a filter for even values forwards 2 and 4 to the publisher; 1 and 3 are filtered and acked"></div>
+
+```go [Code]
 // Forward all order events from sub to pub
 err := sub.Subscribe(ctx, "orders.>", pipe.New[OrderEvent](pub))
 ```
+
+:::
 
 ## pipe.NewMap
 
@@ -29,7 +35,11 @@ func NewMap[T, U any](pub Publisher[U], mapFn MapFunc[T, U], opts ...MapOption[T
 
 Type-transforming pipe. Maps each `Message[T]` payload to a `U` value before publishing. The filter runs on `T` before the map. Map errors and publish errors are returned to the transport. The dead-letter observer is called on either failure.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/pipe-map.svg" alt="pipe.NewMap with strconv.Atoi publishes 1 and 3; x fails to map and the error returns to the transport"></div>
+
+```go [Code]
 mapFn := func(ctx context.Context, msg goflux.Message[OrderEvent]) (Invoice, error) {
     return Invoice{OrderID: msg.Payload.ID, Amount: msg.Payload.Total}, nil
 }
@@ -40,6 +50,8 @@ err := sub.Subscribe(ctx, "orders.created", pipe.NewMap[OrderEvent, Invoice](
 ))
 ```
 
+:::
+
 ## pipe.NewFlatMap
 
 ```go
@@ -48,7 +60,11 @@ func NewFlatMap[T, U any](pub Publisher[U], fn FlatMapFunc[T, U], opts ...MapOpt
 
 Expands each `Message[T]` into zero or more `U` values, publishing each individually. If a publish fails mid-batch, items already published are NOT rolled back -- downstream consumers must be idempotent or deduplicate.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/pipe-flatmap.svg" alt="pipe.NewFlatMap expands order a into line items a1, a2 and order b into b1, publishing each one"></div>
+
+```go [Code]
 flatMapFn := func(ctx context.Context, msg goflux.Message[Order]) ([]LineItem, error) {
     items := make([]LineItem, len(msg.Payload.Items))
     for i, item := range msg.Payload.Items {
@@ -59,6 +75,8 @@ flatMapFn := func(ctx context.Context, msg goflux.Message[Order]) ([]LineItem, e
 
 err := sub.Subscribe(ctx, "orders", pipe.NewFlatMap[Order, LineItem](itemPub, flatMapFn))
 ```
+
+:::
 
 ## Options
 
@@ -113,7 +131,7 @@ handler := pipe.NewMap[RawEvent, CleanEvent](
     }),
     pipe.WithMapDeadLetter[RawEvent, CleanEvent](func(ctx context.Context, msg goflux.Message[RawEvent], err error) {
         slog.ErrorContext(ctx, "dead letter",
-            slog.String("nats", msg.Subject),
+            slog.String("subject", msg.Subject),
             slog.Any("error", err),
         )
     }),
@@ -135,7 +153,7 @@ Pipe adds span events and attributes to the existing transport span. No child sp
 | ---------------------- | ----------------------------------- | ----------------------- |
 | `pipe.type`            | `"forward"` / `"map"` / `"flatmap"` | Always                  |
 | `pipe.filtered`        | `true`                              | Filter rejected message |
-| `pipe.items_published` | `int`                               | FlatMap only            |
+| `pipe.items_published` | `int`                               | FlatMap, all published  |
 
 ### Span Events
 
@@ -182,7 +200,7 @@ stream.
 func FromStream[T any](stream goflow.Stream[Message[T]], pub Publisher[T]) error
 ```
 
-Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. The original message subject is used for publishing. Blocks until the stream is exhausted or the context is cancelled.
+Consumes a `goflow.Stream` of messages and publishes each one via the provided `Publisher`. The original message subject is used for publishing. Blocks until the stream is exhausted, the stream's context is cancelled, or a publish fails. The first publish error stops consumption and is returned.
 
 ```go
 stream := bridge.ToStream[RawEvent](ctx, sub, "events.raw", 16)
@@ -215,7 +233,7 @@ err := orderPub.Publish(ctx, event)
 func ToChan[T any](ctx context.Context, sub Subscriber[T], subject string, bufSize int) <-chan Message[T]
 ```
 
-Bridges a `Subscriber[T]` into a plain Go channel. Launches `Subscribe` in a goroutine and forwards each `Message[T]` (including acker) into a buffered channel. The returned channel closes when `ctx` is cancelled.
+Bridges a `Subscriber[T]` into a plain Go channel. Launches `Subscribe` in a goroutine and forwards each `Message[T]` (including acker) into a buffered channel. The returned channel closes when `ctx` is cancelled or `Subscribe` returns on its own (for example on a terminal transport error, which is logged via `slog`). Callers that must tell the two apart, or restart, should call `Subscribe` directly.
 
 `ToChan` **does not return until the subscription is established**, so a publish sequenced after it is not lost. When `sub` implements [`ReadySubscriber`](/guide/core-concepts#subscriber-readiness) -- as every goflux transport does -- this is a guarantee; for third-party subscribers it degrades to the best-effort fallback.
 
@@ -238,13 +256,19 @@ type RetryableFunc func(err error) bool
 
 Wraps a `Publisher[T]` with retry logic. On publish failure, retries until `maxAttempts` publish calls have been made, with delays determined by `backoff`. Context cancellation aborts the retry loop immediately. If all attempts fail, the last error is returned.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/retry-publisher.svg" alt="RetryPublisher with 3 attempts: the first two publish calls fail, it waits for the backoff and the third call succeeds"></div>
+
+```go [Code]
 retrying := goflux.RetryPublisher[Event](pub, 3, func(attempt int) time.Duration {
     return time.Duration(attempt+1) * time.Second // 1s, 2s
 })
 
 err := retrying.Publish(ctx, "events.order", event)
 ```
+
+:::
 
 ### Limiting which errors are retried
 

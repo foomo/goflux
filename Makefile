@@ -38,7 +38,7 @@ go.work:
 
 .PHONY: check
 ## Run lint & tests
-check: tidy generate lint.fix test.race audit
+check: tidy generate actionlint lint.fix test.race audit
 
 .PHONY: lint
 ## Run linter
@@ -99,13 +99,13 @@ tidy:
 ## Show outdated direct dependencies
 outdated:
 	@echo "〉go mod outdated"
-	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade --list) &&) true
+	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade --cooldown 7d --ignore '^github\.com/foomo/goflux' --list) &&) true
 
 .PHONY: upgrade
 ## Show outdated direct dependencies
 upgrade:
 	@echo "〉go mod upgrade"
-	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade) &&) true
+	@$(foreach mod,$(GOMODS), (cd $(dir $(mod)) && echo "📂 $(dir $(mod))" && GOWORK=off go-mod-upgrade --cooldown 7d --ignore '^github\.com/foomo/goflux') &&) true
 	@$(MAKE) tidy
 
 ### Release
@@ -134,6 +134,12 @@ docs.build:
 	@echo "〉building docs"
 	@cd docs && bun install && bun run build
 
+.PHONY: docs.diagrams
+## Render docs diagrams
+docs.diagrams:
+	@echo "〉rendering docs diagrams"
+	@go run docs/diagrams/gen.go
+
 .PHONY: godocs
 ## Open go docs
 godocs:
@@ -141,6 +147,11 @@ godocs:
 	@go doc -http
 
 ### Utils
+
+.PHONY: actionlint
+## Run actionlint
+actionlint:
+	@actionlint
 
 .PHONY: help
 # https://patorjk.com/software/taag/#p=display&f=miniwi&t=goflux&x=none&v=4&h=4&w=80&we=false
@@ -172,4 +183,3 @@ help:
 		} \
 	}' $(MAKEFILE_LIST)
 	@echo ""
-

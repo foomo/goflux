@@ -52,7 +52,7 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 		var v T
 		if err := s.decoder(msg.Data, &v); err != nil {
 			slog.ErrorContext(ctx, "nats subscriber: decode failed, dropping message",
-				slog.String("nats", msg.Subject),
+				slog.String("subject", msg.Subject),
 				slog.Any("error", err),
 			)
 
@@ -65,14 +65,14 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 		// the producer is waiting for the consumer.
 		remoteSpanCtx := s.tel.ExtractSpanContext(ctx, natsHeaderCarrier{Headers: msg.Header})
 
-		msgCtx := ctx
-		if id := msg.Header.Get(goflux.MessageIDHeader); id != "" {
-			msgCtx = goflux.WithMessageID(msgCtx, id)
+		m := goflux.Message[T]{
+			Subject: msg.Subject,
+			Payload: v,
+			Header:  extractGofluxHeaders(msg.Header),
+			ID:      msg.Header.Get(goflux.MessageIDHeader),
 		}
 
-		m := goflux.Message[T]{Subject: msg.Subject, Payload: v, Header: extractGofluxHeaders(msg.Header)}
-
-		if err := s.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
+		if err := s.tel.RecordProcess(ctx, subject, system, func(ctx context.Context) error {
 			sp := trace.SpanFromContext(ctx)
 			sp.SetAttributes(
 				semconv.MessagingMessageBodySize(len(msg.Data)),
@@ -84,9 +84,9 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 			}
 
 			return handler(ctx, m)
-		}, goflux.WithRemoteSpanContext(remoteSpanCtx)); err != nil {
-			slog.ErrorContext(msgCtx, "nats subscriber: handler error",
-				slog.String("nats", subject),
+		}, goflux.WithRemoteSpanContext(remoteSpanCtx), goflux.WithProcessMessageID(m.ID)); err != nil {
+			slog.ErrorContext(ctx, "nats subscriber: handler error",
+				slog.String("subject", subject),
 				slog.Any("error", err),
 			)
 		}

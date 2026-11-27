@@ -8,7 +8,10 @@ import (
 
 // ToChan bridges a [Subscriber] into a plain channel. It launches Subscribe in
 // a goroutine and forwards each message (including acker) into a buffered
-// channel. The returned channel closes when ctx is cancelled.
+// channel. The returned channel closes when ctx is cancelled or Subscribe
+// returns on its own, for example on a terminal transport error; that error is
+// logged via slog. Callers that must tell the two apart, or restart, should
+// call Subscribe directly.
 //
 // ToChan does not return until the subscription is established, so a publish
 // sequenced after it is not lost. When sub implements [ReadySubscriber] this is

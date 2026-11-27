@@ -17,7 +17,7 @@ func ExampleFromStream() {
 
 	dstBus := channel.NewBus[Event]()
 	dstPub := channel.NewPublisher(dstBus)
-	dstSub, _ := channel.NewSubscriber(dstBus, 1)
+	dstSub := channel.NewSubscriber(dstBus, 1)
 
 	dstCh := goflux.ToChan[Event](ctx, dstSub, "events", 4)
 
