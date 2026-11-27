@@ -2,7 +2,7 @@
 
 Package `github.com/foomo/goflux/transport/jetstream`
 
-The JetStream transport provides durable, acknowledged messaging on top of NATS JetStream. It supports both push and pull consumers through the unified `Subscriber[T]` interface, with auto or manual ack.
+The JetStream transport provides durable, acknowledged messaging on top of NATS JetStream. It consumes JetStream pull consumers (`jetstream.Consumer`) through the `Subscriber[T]` interface, with auto or manual ack. Push consumers (`jetstream.PushConsumer`) are not supported.
 
 ## Interfaces
 
@@ -29,7 +29,7 @@ func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []b
 func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T]
 ```
 
-`Subscribe` starts a consumption loop using the JetStream consumer's `Consume()` method, which works for both push and pull consumers. It blocks until the context is cancelled, then stops the consume context and returns `nil`. If consumption stops on its own (a terminal error, see [Consumer loss and recovery](#consumer-loss-and-recovery)), it returns an error wrapping `goflux.ErrSubscribe` instead of blocking. Decode failures cause the message to be terminated (`msg.Term()`).
+`Subscribe` starts a consumption loop using the pull consumer's `Consume()` method. It blocks until the context is cancelled, then stops the consume context, waits for the in-flight handler to return, and returns `nil`. No handler runs after `Subscribe` returns, so a handler that ignores ctx delays the return until it finishes. If a durable consumer is deleted, it keeps consuming and picks up the recreated consumer (see [Consumer loss and recovery](#consumer-loss-and-recovery)). Decode failures cause the message to be terminated (`msg.Term()`).
 
 ```go
 func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error
@@ -61,7 +61,7 @@ With `WithManualAck()`, the handler is responsible for calling the appropriate m
 func NewStream(ctx context.Context, nc *nats.Conn, cfg jetstream.StreamConfig, opts ...jetstream.JetStreamOpt) (jetstream.JetStream, error)
 ```
 
-`NewStream` is a convenience function that creates a `jetstream.JetStream` handle and idempotently creates the stream described by `cfg`. If the stream already exists, the error is suppressed. The operation has a 10-second timeout.
+`NewStream` is a convenience function that creates a `jetstream.JetStream` handle and creates the stream described by `cfg`, or updates it to `cfg` if it already exists (`CreateOrUpdateStream`). An incompatible update returns an error. The operation has a 10-second timeout.
 
 ## Options
 
@@ -69,27 +69,30 @@ func NewStream(ctx context.Context, nc *nats.Conn, cfg jetstream.StreamConfig, o
 |--------|-----------|-------------|
 | `WithTelemetry(t *goflux.Telemetry)` | All | Sets the OTel telemetry instance. A default is created from OTel globals if not provided. |
 | `WithManualAck()` | Subscriber | Disables auto-ack. The handler must call `msg.Ack()`, `msg.Nak()`, `msg.NakWithDelay()`, or `msg.Term()` on every message. |
-| `WithConsumeOpts(opts ...jetstream.PullConsumeOpt)` | Subscriber | Passes options to `jetstream.Consumer.Consume`, e.g. `jetstream.PullExpiry`, `jetstream.PullHeartbeat`, `jetstream.PullMaxMessages`, `jetstream.ConsumeErrHandler`. Applied after the goflux defaults, so they override them. |
+| `WithConsumeOpts(opts ...jetstream.PullConsumeOpt)` | Subscriber | Passes options to `jetstream.Consumer.Consume`, e.g. `jetstream.PullExpiry`, `jetstream.PullHeartbeat`, `jetstream.PullMaxMessages`, `jetstream.ConsumeErrHandler`. Applied after the goflux defaults, so they override them. Replacing the error handler disables the restart after the server deletes the consumer or rejects a pull request; use `WithConsumeErrHandler` instead. |
+| `WithConsumeErrHandler(fn jetstream.ConsumeErrHandlerFunc)` | Subscriber | Calls `fn` with every consume error after the subscriber's own logging and restart handling, e.g. for metrics. Keeps the restarts working. |
 
 ## Behavior
 
 - **Caller owns connections** -- the caller is responsible for the `jetstream.JetStream` handle and the `jetstream.Consumer`. `Close()` on all types is a no-op.
 - **Stream and consumer configuration** -- retention policy, delivery policy, replay policy, and other JetStream settings are configured via `jetstream.StreamConfig` and `jetstream.ConsumerConfig` directly. goflux does not abstract these.
 - **OTel context propagation** -- uses span links (not parent-child) because async messaging is temporally decoupled. The producer's span context is extracted and attached as a link on the consumer span.
-- **Message ID** -- if `goflux.MessageID(ctx)` is set, it is propagated via the `X-Message-ID` header.
+- **Message ID and deduplication** -- if `goflux.WithMessageID` is set on the publish context, the ID is sent via the `X-Message-ID` header and also as `Nats-Msg-Id`. The stream drops a message whose ID it already saw within `StreamConfig.Duplicates` (default 2 minutes). The subscriber exposes the received ID as `msg.ID` and does not put it into the handler context, so messages published from the handler are not deduplicated against the received one. If you forward the ID with `middleware.ForwardMessageID`, a publish into the same stream, or several publishes with that ID (for example a `pipe.NewFlatMap` stage), is dropped as a duplicate.
 
 ## Consumer loss and recovery
 
 The consumer can disappear while `Subscribe` is running: it is deleted, or a NATS server with in-memory (or non-persistent) JetStream state restarts empty.
 
-- **Errors are logged.** The subscriber installs a `jetstream.ConsumeErrHandler` that logs every consume error with `slog.WarnContext` (subject, consumer, error). Override it with `WithConsumeOpts(jetstream.ConsumeErrHandler(...))`.
+- **Errors are logged.** The subscriber installs a `jetstream.ConsumeErrHandler` that logs consume errors via `slog` (subject, consumer, error): each distinct error once at warn level, repeats at debug level until a message is delivered. Observe errors with `WithConsumeErrHandler(...)`.
 - **A missing consumer is retried.** `Consume` keeps issuing pull requests; each failed cycle is logged (`no heartbeat received`, `no responders available for request`). Once the consumer exists again, delivery resumes on the original `Subscribe` call within about one pull expiry.
-- **Faster default pull expiry.** goflux uses `DefaultPullExpiry` (10s; idle heartbeat 5s) instead of nats.go's 30s, so recovery takes at most about 10s. Tune it with `WithConsumeOpts(jetstream.PullExpiry(...), jetstream.PullHeartbeat(...))`.
-- **Terminal errors return.** When nats.go stops consumption itself -- for example the connection is closed, or the server reports the consumer as deleted while a pull is pending -- `Subscribe` returns an error wrapping `goflux.ErrSubscribe` (with the cause when known), so a supervisor can restart it.
+- **Faster default pull expiry.** goflux uses `DefaultPullExpiry` (10s; idle heartbeat 5s) instead of nats.go's 30s, so recovery takes at most about 10s. The cost is three times the idle pull requests and twice the idle heartbeats per subscriber. If a caller `jetstream.PullHeartbeat` is invalid for 10s (more than 5s), nats.go's default expiry is used instead. Tune it with `WithConsumeOpts(jetstream.PullExpiry(...), jetstream.PullHeartbeat(...))`.
+- **Consumer deletion restarts consumption.** When the server reports the consumer as deleted while a pull is pending, nats.go stops consumption. `Subscribe` restarts it on the same consumer, so it retries like in the case without a pending pull. An ephemeral consumer cannot be recreated under its name, so `Subscribe` returns an error wrapping `goflux.ErrSubscribe` instead.
+- **Rejected pulls are retried.** When the server rejects a pull request (`jetstream.ErrBadRequest`), `Subscribe` logs an error and restarts consumption after one pull expiry (`DefaultPullExpiry`, or the `jetstream.PullExpiry` passed through `WithConsumeOpts`). It does not return: every replica sends the same requests, so returning would stop all pods at once.
+- **Other stops keep blocking.** If the `*nats.Conn` is closed, or consumption is stopped through `jetstream.StopAfter` or a custom error handler, `Subscribe` keeps blocking until the context is cancelled, like every goflux subscriber. The caller owns the connection: set `nats.ClosedHandler` to detect a connection that gave up reconnecting (with nats.go defaults, after 60 attempts 2s apart).
 
 Something must recreate the stream and consumer after state loss. With [NACK](https://github.com/nats-io/nack), run the controller with `--control-loop`: it re-applies Stream and Consumer resources every `--sync-interval` (default 1m). The default (legacy) mode only acts on resource changes and does not recreate resources lost on the server.
 
-## Push Subscriber with Auto-Ack
+## Subscriber with Auto-Ack
 
 ```go
 package main
@@ -99,7 +102,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxjs "github.com/foomo/goflux/transport/jetstream"
 	"github.com/nats-io/nats.go"
@@ -181,7 +184,7 @@ go func() {
 
 ## Pull Consumer with Subscriber
 
-JetStream pull consumers use the same `Subscriber[T]` interface. Configure the JetStream consumer with `AckPolicy: jetstream.AckExplicitPolicy` and use `WithManualAck()` combined with middleware for ack control:
+Use `WithManualAck()` combined with middleware for ack control. `AckPolicy: jetstream.AckExplicitPolicy` is the nats.go default and is shown for clarity:
 
 ```go
 cons, _ := js.CreateOrUpdateConsumer(ctx, "EVENTS", jetstream.ConsumerConfig{
@@ -192,8 +195,8 @@ cons, _ := js.CreateOrUpdateConsumer(ctx, "EVENTS", jetstream.ConsumerConfig{
 codec := json.NewCodec[Event]()
 sub := gofluxjs.NewSubscriber[Event](cons, codec.Decode, gofluxjs.WithManualAck())
 
-// Use ToStream + goflow for bounded concurrency.
-stream := goflux.ToStream[Event](ctx, sub, "events.created", 16)
+// Use bridge.ToStream + goflow for bounded concurrency.
+stream := bridge.ToStream[Event](ctx, sub, "events.created", 16)
 
 policy := middleware.NewRetryPolicy(5 * time.Second)
 go func() {

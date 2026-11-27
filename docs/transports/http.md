@@ -31,11 +31,12 @@ If `client` is nil, a default `*http.Client` with a 10-second timeout is used. A
 func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...SubscriberOption) *Subscriber[T]
 ```
 
-`Subscribe` registers a handler for `POST {basePath}/{subject}` on the subscriber's internal `*http.ServeMux`, then blocks until the context is cancelled. The subscriber exposes two ways to integrate with an HTTP server:
+`Subscribe` registers a handler for `POST {basePath}/{subject}` on the subscriber's internal `*http.ServeMux`, then blocks until the context is cancelled. The subscriber offers these ways to integrate with an HTTP server:
 
 - **`Subscribe`** -- registers the route and blocks. Use when running in a goroutine alongside the server.
 - **`SubscribeWithReady(ctx, subject, handler, ready)`** -- same, but invokes `ready` once the route is registered on the mux.
 - **`Handler(subject, handler)`** -- returns an `http.HandlerFunc` for the subject, allowing direct registration on an external mux.
+- **`Mux()`** -- returns the internal `*http.ServeMux` on which `Subscribe` registers routes. Mount it on your server.
 
 ::: warning
 `ready` reports **mux registration only**. This Subscriber does not own a listener, so it cannot report that the HTTP server is accepting connections. Callers that need that must additionally synchronise on their own server startup.
@@ -58,8 +59,8 @@ func NewSubscriber[T any](decoder goencode.Decoder[T, []byte], opts ...Subscribe
 ```go
 func NewRequester[Req, Resp any](
     baseURL string,
-    reqCodec goencode.Codec[Req],
-    respCodec goencode.Codec[Resp],
+    reqCodec goencode.Codec[Req, []byte],
+    respCodec goencode.Codec[Resp, []byte],
     client *http.Client,
     opts ...PublisherOption,
 ) *Requester[Req, Resp]
@@ -73,8 +74,8 @@ func NewRequester[Req, Resp any](
 
 ```go
 func NewResponder[Req, Resp any](
-    reqCodec goencode.Codec[Req],
-    respCodec goencode.Codec[Resp],
+    reqCodec goencode.Codec[Req, []byte],
+    respCodec goencode.Codec[Resp, []byte],
     opts ...SubscriberOption,
 ) *Responder[Req, Resp]
 ```
@@ -106,7 +107,7 @@ func NewResponder[Req, Resp any](
 - **Caller owns the server** -- the subscriber and responder expose a mux or handler; they do not start a listener. Mount them on your own `http.Server` or framework.
 - **Headers** -- goflux context headers are prefixed with `X-Goflux-` in HTTP headers. On the subscriber side, `X-Goflux-*` headers are extracted and stripped of the prefix.
 - **OTel context propagation** -- HTTP is synchronous, so the transport uses parent-child spans (not links) via `ExtractContext` / `InjectContext` with the standard `propagation.HeaderCarrier`.
-- **Message ID** -- if `goflux.MessageID(ctx)` is set, it is propagated via the `X-Message-ID` header.
+- **Message ID** -- if `goflux.WithMessageID` is set on the publish context, the ID is sent via the `X-Message-ID` header. The subscriber exposes it as `msg.ID`; it is not put into the handler context.
 - **Close** -- all `Close()` methods are no-ops. Lifecycle management belongs to the outer HTTP server.
 
 ## Pub/Sub Example
@@ -120,7 +121,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxhttp "github.com/foomo/goflux/transport/http"
 )
@@ -176,7 +177,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	gofluxhttp "github.com/foomo/goflux/transport/http"
 )
 

@@ -2,18 +2,23 @@
 
 This page covers every core type in goflux and the rules that govern how they interact.
 
+Code examples with a flow have a **Diagram** tab next to the code. The diagrams are animations. Blue elements are messages going in. Green elements are handled messages, acks and replies. Purple elements are transformed messages. A red element is an error, a nak or a dropped message.
+
 ## Message[T]
 
-`Message[T]` is the unit passed to every handler. It carries the routing key, a fully decoded payload, optional headers, and acknowledgment controls:
+`Message[T]` is the unit passed to every handler. It carries the routing key, a fully decoded payload, optional headers, the message ID, and acknowledgment controls:
 
 ```go
 type Message[T any] struct {
-    Subject string `json:"nats"`
+    Subject string `json:"subject"`
     Payload T      `json:"payload"`
     Header  Header `json:"header,omitempty"`
+    ID      string `json:"id,omitempty"`
     // unexported: acker Acker
 }
 ```
+
+`ID` is the message ID the publisher set with `goflux.WithMessageID`. Like `Header`, it describes the received message only: messages published from the handler do not inherit it. See [Message ID](/integrations/opentelemetry#message-id).
 
 Use the constructors to create messages:
 
@@ -111,9 +116,13 @@ type ReadySubscriber[T any] interface {
 }
 ```
 
-`ready` is called at most once, only after the subscription is established, and never after `SubscribeWithReady` returns. If registration fails, the error is returned and `ready` is never called. `ready` must not block.
+`ready` is called at most once, only after the subscription is established, and never after `SubscribeWithReady` returns. If registration fails, the error is returned and `ready` is never called. An error returned after `ready` was called means the subscription was established, and then either lost (for example a deleted JetStream ephemeral consumer) or not cleaned up on context cancellation (for example a NATS unsubscribe on a closed connection). `ready` must not block.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/readiness.svg" alt="Publishing right after go Subscribe drops m1; publishing after ready() delivers it"></div>
+
+```go [Code]
 ready := make(chan struct{})
 
 go func() {
@@ -124,6 +133,8 @@ go func() {
 
 _ = pub.Publish(ctx, "orders.created", event) // cannot be lost
 ```
+
+:::
 
 Prefer the package-level helper when writing transport-agnostic code -- it uses `ReadySubscriber` when available and falls back to `Subscribe` (calling `ready()` first) for third-party subscribers that do not implement it:
 
@@ -197,7 +208,7 @@ resp, err := requester.Request(ctx, "orders.get", GetOrderReq{OrderID: "42"})
 
 ## Header
 
-`Header` carries message metadata -- trace context, message IDs, custom key-value pairs. It follows `http.Header` semantics: keys are case-sensitive, values are string slices.
+`Header` carries message metadata -- trace context, message IDs, custom key-value pairs. Values are string slices like in `http.Header`, but keys are stored as given and not canonicalized. `Get` prefers an exact key match and falls back to a case-insensitive match, because HTTP changes key case on the wire (`X-Tenant-ID` arrives as `X-Tenant-Id`).
 
 ```go
 type Header map[string][]string
@@ -262,7 +273,7 @@ Use `msg.HasAcker()` to check at runtime whether acknowledgment is available.
 For handlers that should always ack on success and nak on error, use the `AutoAck` middleware instead of manual calls:
 
 ```go
-wrapped := goflux.AutoAck[OrderEvent]()(handler)
+wrapped := middleware.AutoAck[OrderEvent]()(handler)
 ```
 
 ## Topic[T]
@@ -299,7 +310,7 @@ go func() {
 pub := gofluxnats.NewPublisher(conn, codec.Encode)
 bound := goflux.BindPublisher(pub, "orders.created")
 
-// No nats argument needed.
+// No subject argument needed.
 err := bound.Publish(ctx, OrderEvent{ID: "42"})
 ```
 
@@ -330,7 +341,7 @@ See [Middleware](/middleware/) for messaging-specific middleware (`AutoAck`, `Re
 1. **Subscribe and Serve block.** Always run them in a goroutine.
 2. **Sequence publishes with readiness, not sleeps.** Use `SubscribeWithReady` / `ServeWithReady` whenever a publish or request follows a subscribe.
 3. **Caller owns connections.** Transport constructors for NATS, JetStream, and HTTP accept an existing connection. The caller connects and closes.
-4. **Close semantics vary.** `Close()` on channel types is a no-op. NATS and JetStream transports call `conn.Drain()`. Check the transport documentation.
+4. **Close is a no-op.** `Close()` on every transport type returns nil without closing anything. The caller owns the connection and drains or closes it.
 5. **No raw bytes in handlers.** `Message[T]` always carries the fully decoded payload. Decoding happens at the transport boundary.
 6. **Encoders and decoders are stateless function types.** Share them freely. Use `codec.Encode` / `codec.Decode` or compose with `PipeEncoder` / `PipeDecoder`.
 7. **Ack methods degrade gracefully.** Calling `Ack()` on a fire-and-forget message is a no-op, not a panic.

@@ -9,6 +9,7 @@ import (
 	"github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	fluxnats "github.com/foomo/goflux/transport/nats"
+	"github.com/foomo/gofuncy"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 )
@@ -39,16 +40,13 @@ func TestSubscriber_serverReplacement(t *testing.T) {
 	const subject = "reconnect.events"
 
 	received := make(chan Event, 8)
-	ready := make(chan struct{})
 
-	go func() {
-		_ = sub.SubscribeWithReady(ctx, subject, func(_ context.Context, msg goflux.Message[Event]) error {
+	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
+		return sub.SubscribeWithReady(ctx, subject, func(_ context.Context, msg goflux.Message[Event]) error {
 			received <- msg.Payload
 			return nil
-		}, func() { close(ready) })
-	}()
-
-	waitFor(t, ready, 10*time.Second, "subscription ready")
+		}, ready)
+	}, gofuncy.WithName("test.subscriber"))
 
 	publishAndFlush(t, ctx, pub, pubConn, subject, Event{ID: "before"})
 	expectEvent(t, received, "before", 5*time.Second)

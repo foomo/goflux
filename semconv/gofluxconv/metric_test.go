@@ -42,7 +42,7 @@ func TestAckOutcome_nilMeter(t *testing.T) {
 func TestConsumerLag(t *testing.T) {
 	t.Parallel()
 
-	m, err := gofluxconv.NewConsumerLag(noop.Meter{}, "orders.created", func() int64 { return 42 })
+	m, err := gofluxconv.NewConsumerLag(noop.Meter{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "goflux.consumer.lag", m.Name())
@@ -54,8 +54,11 @@ func TestConsumerLag(t *testing.T) {
 func TestConsumerLag_nilMeter(t *testing.T) {
 	t.Parallel()
 
-	m, err := gofluxconv.NewConsumerLag(nil, "orders.created", func() int64 { return 0 })
+	m, err := gofluxconv.NewConsumerLag(nil)
 	require.NoError(t, err)
 
 	assert.Nil(t, m.Inst())
+
+	// must not panic with nil instrument
+	m.Observe(nil, 1, m.AttrDestinationName("orders.created"))
 }

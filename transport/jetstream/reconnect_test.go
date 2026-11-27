@@ -9,6 +9,7 @@ import (
 	"github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	fluxjetstream "github.com/foomo/goflux/transport/jetstream"
+	"github.com/foomo/gofuncy"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -71,16 +72,13 @@ func TestSubscriber_serverReplacementConsumerRecreated(t *testing.T) {
 	sub := fluxjetstream.NewSubscriber(cons, json.NewCodec[Event]().Decode)
 
 	received := make(chan Event, 8)
-	ready := make(chan struct{})
 
-	go func() {
-		_ = sub.SubscribeWithReady(ctx, subject, func(_ context.Context, msg goflux.Message[Event]) error {
+	gofuncy.StartWithReady(ctx, func(ctx context.Context, ready gofuncy.ReadyFunc) error {
+		return sub.SubscribeWithReady(ctx, subject, func(_ context.Context, msg goflux.Message[Event]) error {
 			received <- msg.Payload
 			return nil
-		}, func() { close(ready) })
-	}()
-
-	waitFor(t, ready, 10*time.Second, "subscription ready")
+		}, ready)
+	}, gofuncy.WithName("test.subscriber"))
 
 	publishStored(t, ctx, pubJS, subject, "before")
 	expectEvent(t, received, "before", 5*time.Second)

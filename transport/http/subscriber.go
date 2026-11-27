@@ -91,7 +91,7 @@ func (s *Subscriber[T]) Mux() *http.ServeMux {
 	return s.mux
 }
 
-// Subscribe registers handler for POST {basePath}/{nats} on the mux.
+// Subscribe registers handler for POST {basePath}/{subject} on the mux.
 // Multiple subjects can be registered before the server starts.
 // ctx is used as the base context for all handler invocations.
 //
@@ -148,15 +148,16 @@ func (s *Subscriber[T]) Handler(subject string, handler goflux.Handler[T]) http.
 			return
 		}
 
-		msg := goflux.Message[T]{Subject: subject, Payload: v, Header: extractGofluxHeaders(r.Header)}
+		msg := goflux.Message[T]{
+			Subject: subject,
+			Payload: v,
+			Header:  extractGofluxHeaders(r.Header),
+			ID:      r.Header.Get(goflux.MessageIDHeader),
+		}
 
 		// Extract OTel trace context from incoming HTTP headers to link
 		// consumer spans to the originating producer span.
 		msgCtx := s.tel.ExtractContext(r.Context(), propagation.HeaderCarrier(r.Header))
-
-		if id := r.Header.Get(goflux.MessageIDHeader); id != "" {
-			msgCtx = goflux.WithMessageID(msgCtx, id)
-		}
 
 		err = s.tel.RecordProcess(msgCtx, subject, system, func(hCtx context.Context) error {
 			trace.SpanFromContext(hCtx).SetAttributes(
@@ -165,7 +166,7 @@ func (s *Subscriber[T]) Handler(subject string, handler goflux.Handler[T]) http.
 			)
 
 			return handler(hCtx, msg)
-		})
+		}, goflux.WithProcessMessageID(msg.ID))
 		if err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 

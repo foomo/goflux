@@ -92,25 +92,39 @@ type ConsumerLag struct {
 	inst metric.Int64ObservableGauge
 }
 
-// NewConsumerLag registers an observable gauge that reports the current lag for
-// the given subject via lagFn on each collection.
-func NewConsumerLag(m metric.Meter, subject string, lagFn func() int64) (ConsumerLag, error) {
+// NewConsumerLag creates the consumer lag gauge. Report values with
+// [ConsumerLag.Observe] from a callback registered for [ConsumerLag.Inst] via
+// metric.Meter.RegisterCallback.
+func NewConsumerLag(m metric.Meter) (ConsumerLag, error) {
 	if m == nil {
 		return ConsumerLag{}, nil
 	}
 
-	g, err := m.Int64ObservableGauge(consumerLagName,
-		metric.WithDescription(consumerLagDesc),
-		metric.WithInt64Callback(func(_ context.Context, obs metric.Int64Observer) error {
-			obs.Observe(lagFn(),
-				metric.WithAttributes(msgsemconv.MessagingDestinationName(subject)),
-			)
-
-			return nil
-		}),
-	)
+	g, err := m.Int64ObservableGauge(consumerLagName, metric.WithDescription(consumerLagDesc))
 
 	return ConsumerLag{inst: g}, err
+}
+
+// AttrDestinationName returns the messaging.destination.name attribute.
+func (ConsumerLag) AttrDestinationName(v string) attribute.KeyValue {
+	return msgsemconv.MessagingDestinationName(v)
+}
+
+// AttrDestinationTemplate returns the messaging.destination.template attribute.
+func (ConsumerLag) AttrDestinationTemplate(v string) attribute.KeyValue {
+	return msgsemconv.MessagingDestinationTemplate(v)
+}
+
+// Observe reports lag for destination, which is either
+// messaging.destination.name or, to bound cardinality,
+// messaging.destination.template (see [ConsumerLag.AttrDestinationName] and
+// [ConsumerLag.AttrDestinationTemplate]).
+func (g ConsumerLag) Observe(obs metric.Observer, lag int64, destination attribute.KeyValue) {
+	if g.inst == nil {
+		return
+	}
+
+	obs.ObserveInt64(g.inst, lag, metric.WithAttributes(destination))
 }
 
 func (ConsumerLag) Name() string                        { return consumerLagName }

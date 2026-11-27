@@ -17,6 +17,9 @@ import (
 //  3. Forwards msg.Header into the publish context via [goflux.WithHeader]
 //  4. Publishes msg.Payload to msg.Subject
 //
+// msg.ID is not forwarded; add middleware.ForwardMessageID via
+// [WithMiddleware] to publish with the same message ID.
+//
 // Publish errors are returned to the caller (transport decides retry/nak).
 // The dead-letter observer is called on publish error for logging/alerting.
 func New[T any](pub goflux.Publisher[T], opts ...Option[T]) goflux.Handler[T] {
@@ -100,6 +103,10 @@ func NewMap[T, U any](pub goflux.Publisher[U], mapFn MapFunc[T, U], opts ...MapO
 // If the FlatMapFunc fails, the error is returned immediately.
 // If a publish fails mid-batch, items already published are NOT rolled back —
 // downstream consumers must be idempotent or deduplicate.
+//
+// Every item is published with the same context, so with
+// middleware.ForwardMessageID all items carry the same message ID, and a
+// deduplicating transport such as JetStream keeps only the first one.
 func NewFlatMap[T, U any](pub goflux.Publisher[U], fn FlatMapFunc[T, U], opts ...MapOption[T, U]) goflux.Handler[T] {
 	cfg := newMapConfig(opts)
 

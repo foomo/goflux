@@ -6,6 +6,8 @@ minimum_release_age = "3d"
 [tools]
 # https://mise-tools.jdx.dev/tools/bun
 bun = "1.4.5"
+# https://mise-tools.jdx.dev/tools/bun
+go = "1.27.4"
 # https://mise-tools.jdx.dev/tools/actionlint
 actionlint = "1.7.12"
 # https://mise-tools.jdx.dev/tools/lefthook

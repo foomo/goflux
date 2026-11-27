@@ -6,10 +6,14 @@ At-least-once delivery guarantees that a message is processed at least one time.
 
 By default, the JetStream subscriber manages acknowledgments automatically:
 
-- Handler returns `nil` -- the message is **acked** (removed from the stream).
+- Handler returns `nil` -- the message is **acked** (not redelivered to this consumer; only WorkQueue or Interest retention also removes it from the stream).
 - Handler returns a non-nil `error` -- the message is **naked** (scheduled for redelivery).
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/at-least-once.svg" alt="The handler acks m1; it fails on m2, JetStream gets a nak and redelivers m2, then the handler acks it"></div>
+
+```go [Code]
 package main
 
 import (
@@ -58,6 +62,8 @@ func main() {
 func process(_ Event) error { return nil }
 ```
 
+:::
+
 ## Manual Ack
 
 For fine-grained control, enable manual acknowledgment with `gofluxjs.WithManualAck()`. The handler is then responsible for calling one of the ack methods on every message.
@@ -78,7 +84,7 @@ _ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[
 
 | Method | Behavior |
 |--------|----------|
-| `msg.Ack()` | Confirm successful processing. Message is removed from the stream. |
+| `msg.Ack()` | Confirm successful processing. The consumer does not redeliver it; WorkQueue or Interest retention also removes it from the stream. |
 | `msg.Nak()` | Signal failure. Message is redelivered immediately. |
 | `msg.NakWithDelay(d)` | Signal failure with a redelivery delay hint. Use for transient errors (e.g., downstream timeout) to avoid tight retry loops. Falls back to `Nak()` if the transport does not support delayed redelivery. |
 | `msg.Term()` | Terminate processing. Message will **not** be redelivered. Use for poison messages that can never succeed (e.g., malformed payload, business rule violation). Falls back to `Ack()` if the transport does not support terminal rejection. |

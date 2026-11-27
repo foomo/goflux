@@ -113,7 +113,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/foomo/goencode/json"
+	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
 	gofluxnats "github.com/foomo/goflux/transport/nats"
 	subjnats "github.com/foomo/goflux/subject/nats"

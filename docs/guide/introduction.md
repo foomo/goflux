@@ -42,7 +42,7 @@ goflux is organized into five layers. Each layer depends only on the one above i
 | AutoAck, RetryAck, InjectMessageID, InjectHeader           |
 +------------------------------------------------------------+
 | Pipeline Operators                                         |
-| Pipe, PipeMap, ToStream, FromStream, ToChan                |
+| pipe.New/NewMap/NewFlatMap, ToChan, bridge.To/FromStream  |
 +------------------------------------------------------------+
 | Telemetry                                                  |
 | OTel tracing + metrics, context propagation, message ID    |
@@ -59,7 +59,7 @@ Your code lives at the top -- it depends on core interfaces and optionally uses 
 | At-least-once | Messages are acked/naked; redelivered on failure | jetstream |
 | Pull consumer | Subscriber with pull consumer config and middleware | jetstream |
 | Request-reply | Send a request, wait for a typed response | nats, http |
-| Queue groups | Load-balance messages across subscriber instances | nats, jetstream |
+| Queue groups | Load-balance messages across subscriber instances | nats (jetstream: share one durable consumer) |
 | Fan-out / Fan-in | Broadcast, merge, or round-robin via goflow streams | all (via ToStream + goflow) |
 
 ## What's Next

@@ -1,10 +1,10 @@
 # Pull Consumer
 
-JetStream pull consumers work through the same `Subscriber[T]` interface as push consumers. The nats.go library's `jetstream.Consumer.Consume()` method handles both push and pull delivery modes -- goflux's `Subscriber[T]` wraps this uniformly. The difference is in the JetStream consumer configuration, not the goflux API.
+goflux's JetStream `Subscriber[T]` wraps a `jetstream.Consumer`, which is always a pull consumer, and calls its `Consume()` method internally. Pull timing is tuned with `WithConsumeOpts`, ack behavior with the consumer's `AckPolicy`, `WithManualAck()` and middleware.
 
 ## How It Works
 
-A JetStream consumer configured with `AckPolicy: jetstream.AckExplicitPolicy` operates in pull mode. The goflux `Subscriber[T]` calls `consumer.Consume()` internally, which works for both push and pull consumers. Combine this with middleware for concurrency control, auto-ack, and retry policies.
+Use a consumer with `AckPolicy: jetstream.AckExplicitPolicy` (the nats.go default) and combine the subscriber with middleware for concurrency control, auto-ack, and retry policies.
 
 ## JetStream Pull Consumer with Middleware
 
@@ -19,6 +19,7 @@ import (
 
 	json "github.com/foomo/goencode/json/v1"
 	"github.com/foomo/goflux"
+	"github.com/foomo/goflux/bridge"
 	"github.com/foomo/goflux/middleware"
 	gofluxjs "github.com/foomo/goflux/transport/jetstream"
 	"github.com/nats-io/nats.go"
@@ -51,15 +52,15 @@ func main() {
 
 	codec := json.NewCodec[Task]()
 
-	// Create a subscriber from the pull consumer -- same interface as push.
+	// Create a subscriber from the pull consumer.
 	sub := gofluxjs.NewSubscriber[Task](cons, codec.Decode, gofluxjs.WithManualAck())
 
-	// Use ToStream to bridge into goflow for stream processing.
-	stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)
+	// Use bridge.ToStream to bridge into goflow for stream processing.
+	tasks := bridge.ToStream[Task](ctx, sub, "tasks.>", 16)
 
 	// Process with bounded concurrency via goflow.
 	policy := middleware.NewRetryPolicy(5 * time.Second)
-	if err := stream.Process(5, func(ctx context.Context, msg goflux.Message[Task]) error {
+	if err := tasks.Process(5, func(ctx context.Context, msg goflux.Message[Task]) error {
 		fmt.Printf("processing task %s\n", msg.Payload.ID)
 		err := processTask(msg.Payload)
 		if err != nil {
@@ -89,9 +90,9 @@ func processTask(_ Task) error { return nil }
 Use `ToStream` + goflow `Process` for bounded concurrency with stream operators:
 
 ```go
-stream := goflux.ToStream[Task](ctx, sub, "tasks.>", 16)
+tasks := bridge.ToStream[Task](ctx, sub, "tasks.>", 16)
 
-stream.Process(10, func(ctx context.Context, msg goflux.Message[Task]) error {
+tasks.Process(10, func(ctx context.Context, msg goflux.Message[Task]) error {
     err := myHandler(ctx, msg)
     if err != nil {
         return msg.Nak()
@@ -149,8 +150,8 @@ Handlers can also call `msg.InProgress()` directly, e.g. after each processed ba
 
 ## When to Use
 
-- **Backpressure control** -- the consumer configuration controls delivery rate instead of being overwhelmed by unbounded push delivery.
+- **Backpressure control** -- `jetstream.PullMaxMessages` (via `WithConsumeOpts`) and `Process(n, ...)` bound the in-flight work.
 - **Worker-paced consumption** -- useful when processing time varies widely and you want bounded concurrency.
 - **Policy-driven retry** -- classify errors into retry/term without embedding ack logic in handlers.
 
-For push-based delivery with automatic acknowledgment, see [at-least-once](./at-least-once).
+For automatic acknowledgment, see [at-least-once](./at-least-once).

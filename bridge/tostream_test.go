@@ -21,7 +21,7 @@ func ExampleToStream() {
 	bus := channel.NewBus[Event]()
 	pub := channel.NewPublisher(bus)
 
-	sub, _ := channel.NewSubscriber(bus, 1)
+	sub := channel.NewSubscriber(bus, 1)
 
 	stream := bridge.ToStream[Event](ctx, sub, "events", 4)
 

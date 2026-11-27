@@ -34,7 +34,7 @@ func NewPublisher[T any](bus *Bus[T], opts ...Option) *Publisher[T]
 ## Subscriber
 
 ```go
-func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) (*Subscriber[T], error)
+func NewSubscriber[T any](bus *Bus[T], bufSize int, opts ...Option) *Subscriber[T]
 ```
 
 `bufSize` controls the internal channel buffer. A zero value means unbuffered (strict synchronous handoff). `Subscribe` blocks until the context is cancelled.
@@ -58,7 +58,7 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 - **No codec required** -- messages are passed through typed channels as-is.
 - **Backpressure** -- the publisher blocks on each subscriber's channel send. If any subscriber is slow, the publisher goroutine is blocked until all subscribers accept.
 - **Headers** -- `goflux.Header` from the context is propagated in-memory on the `Message`.
-- **Acker** -- `Message.Acker` is nil. Channel transport is fire-and-forget with no acknowledgement semantics.
+- **Acker** -- `msg.HasAcker()` returns false and the ack methods are no-ops. Channel transport is fire-and-forget with no acknowledgement semantics.
 - **Telemetry** -- publish and process operations are recorded via `RecordPublish` and `RecordProcess`.
 
 ## Example
@@ -89,10 +89,7 @@ func main() {
 
 	pub := channel.NewPublisher[Event](bus)
 
-	sub, err := channel.NewSubscriber[Event](bus, 16) // buffered channel of 16
-	if err != nil {
-		log.Fatal(err)
-	}
+	sub := channel.NewSubscriber[Event](bus, 16) // buffered channel of 16
 
 	// Subscribe in a goroutine -- SubscribeWithReady blocks until ctx is
 	// cancelled, and signals once the channel is registered on the bus.

@@ -160,6 +160,22 @@ func TestRecordProcess_WithSpanLink(t *testing.T) {
 	assert.Equal(t, remoteSpanCtx.SpanID(), spans[0].Links[0].SpanContext.SpanID())
 }
 
+// TestRecordProcess_WithProcessMessageID asserts that the consumer span records
+// the received message ID from the option, not the outgoing ID in ctx.
+func TestRecordProcess_WithProcessMessageID(t *testing.T) {
+	tel, spanExporter, _ := setupTelemetry(t)
+	ctx := goflux.WithMessageID(context.Background(), "outgoing")
+
+	err := tel.RecordProcess(ctx, "orders.created", "test", func(ctx context.Context) error {
+		return nil
+	}, goflux.WithProcessMessageID("received"))
+	require.NoError(t, err)
+
+	spans := spanExporter.GetSpans()
+	require.Len(t, spans, 1)
+	assert.Contains(t, spans[0].Attributes, attribute.String("messaging.message.id", "received"))
+}
+
 func TestRecordAckOutcome(t *testing.T) {
 	tel, _, metricReader := setupTelemetry(t)
 	ctx := context.Background()
@@ -425,4 +441,66 @@ func TestNewNoopTelemetry_SafeToUse(t *testing.T) {
 	require.NoError(t, err)
 
 	tel.RecordAckOutcome(ctx, "ack", "test", nil)
+}
+
+// TestRegisterLag_sumsPerDestination checks that the lag gauge maps subjects
+// through WithDestinationTemplate, sums registrations that share a
+// destination, and drops unregistered ones.
+func TestRegisterLag_sumsPerDestination(t *testing.T) {
+	metricReader := metric.NewManualReader()
+	mp := metric.NewMeterProvider(metric.WithReader(metricReader))
+
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+
+	tel, err := goflux.NewTelemetry(
+		goflux.WithMeterProvider(mp),
+		goflux.WithDestinationTemplate(orderTemplate),
+	)
+	require.NoError(t, err)
+
+	lag := func() map[attribute.KeyValue]int64 {
+		var rm metricdata.ResourceMetrics
+		require.NoError(t, metricReader.Collect(context.Background(), &rm))
+
+		points := map[attribute.KeyValue]int64{}
+
+		for _, sm := range rm.ScopeMetrics {
+			for _, m := range sm.Metrics {
+				if m.Name != "goflux.consumer.lag" {
+					continue
+				}
+
+				gauge, ok := m.Data.(metricdata.Gauge[int64])
+				require.True(t, ok)
+
+				for _, dp := range gauge.DataPoints {
+					require.Equal(t, 1, dp.Attributes.Len())
+
+					kv, _ := dp.Attributes.Get(0)
+					points[kv] = dp.Value
+				}
+			}
+		}
+
+		return points
+	}
+
+	unregister1 := tel.RegisterLag("orders.id-1.created", func() int64 { return 2 })
+	unregister2 := tel.RegisterLag("orders.id-2.created", func() int64 { return 3 })
+	unregister3 := tel.RegisterLag("invoices", func() int64 { return 1 })
+
+	require.Equal(t, map[attribute.KeyValue]int64{
+		attribute.String("messaging.destination.template", "orders.*.created"): 5,
+		attribute.String("messaging.destination.name", "invoices"):             1,
+	}, lag())
+
+	unregister1()
+	require.Equal(t, map[attribute.KeyValue]int64{
+		attribute.String("messaging.destination.template", "orders.*.created"): 3,
+		attribute.String("messaging.destination.name", "invoices"):             1,
+	}, lag())
+
+	unregister2()
+	unregister3()
+	require.Empty(t, lag())
 }

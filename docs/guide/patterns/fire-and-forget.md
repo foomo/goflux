@@ -15,7 +15,7 @@ The publisher calls `Publish` and returns immediately after the transport accept
 
 ## Channel Transport Example
 
-The channel transport uses an in-process `Bus` as the message broker. Messages are delivered synchronously through Go channels, so a slow subscriber applies backpressure to the publisher.
+The channel transport uses an in-process `Bus` as the message broker. Messages are delivered through buffered Go channels. `Publish` returns once the message is buffered; when a subscriber's buffer is full, the publisher blocks (backpressure).
 
 ```go
 package main
@@ -44,18 +44,17 @@ func main() {
 	// Publisher and subscriber are both bound to the same bus.
 	pub := channel.NewPublisher[OrderCreated](bus)
 
-	sub, err := channel.NewSubscriber[OrderCreated](bus, 16) // buffer size 16
-	if err != nil {
-		log.Fatal(err)
-	}
+	sub := channel.NewSubscriber[OrderCreated](bus, 16) // buffer size 16
 
 	// Subscribe blocks until ctx is cancelled — run it in a goroutine and wait
 	// for readiness before publishing.
 	ready := make(chan struct{})
+	received := make(chan struct{})
 	go func() {
 		_ = sub.SubscribeWithReady(ctx, "orders.created", func(ctx context.Context, msg goflux.Message[OrderCreated]) error {
 			fmt.Printf("received order %s (total: %.2f)\n", msg.Payload.OrderID, msg.Payload.Total)
 			// HasAcker() is false — Ack/Nak are no-ops.
+			close(received)
 			return nil
 		}, func() { close(ready) })
 	}()
@@ -69,6 +68,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Publish returns once the message is buffered; wait for the handler.
+	<-received
 	cancel()
 }
 ```
@@ -77,7 +78,11 @@ func main() {
 
 With NATS core, messages are sent over the network but still follow at-most-once semantics. Publishers take a `goencode.Encoder`, subscribers take a `goencode.Decoder`.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/fire-and-forget.svg" alt="NATS core delivers m1, m2, m3 once; the handler fails on m2 and m2 is not redelivered"></div>
+
+```go [Code]
 package main
 
 import (
@@ -111,21 +116,30 @@ func main() {
 	pub := gofluxnats.NewPublisher[Event](conn, codec.Encode)
 	sub := gofluxnats.NewSubscriber[Event](conn, codec.Decode)
 
+	// Core NATS drops a message published before the subscription exists,
+	// so wait for readiness before publishing.
+	ready := make(chan struct{})
+	received := make(chan struct{})
 	go func() {
-		_ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {
+		_ = sub.SubscribeWithReady(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {
 			fmt.Printf("[%s] %s\n", msg.Subject, msg.Payload.Message)
+			close(received)
 			return nil
-		})
+		}, func() { close(ready) })
 	}()
+	<-ready
 
 	_ = pub.Publish(ctx, "events.user.signup", Event{
 		Kind:    "signup",
 		Message: "user alice signed up",
 	})
 
+	<-received
 	cancel()
 }
 ```
+
+:::
 
 ## When to Use
 

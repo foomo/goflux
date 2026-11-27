@@ -12,10 +12,7 @@ import (
 func ExampleNewSubscriber() {
 	bus := channel.NewBus[Event]()
 
-	sub, err := channel.NewSubscriber(bus, 1)
-	if err != nil {
-		panic(err)
-	}
+	sub := channel.NewSubscriber(bus, 1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

@@ -20,9 +20,10 @@ func ExampleForwardMessageID() {
 
 	handler := middleware.ForwardMessageID[string]()(inner)
 
-	ctx := goflux.WithMessageID(context.Background(), "msg-123")
+	msg := goflux.NewMessage("test", "payload")
+	msg.ID = "msg-123"
 
-	_ = handler(ctx, goflux.NewMessage("test", "payload"))
+	_ = handler(context.Background(), msg)
 	// Output: msg-123
 }
 

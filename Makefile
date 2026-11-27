@@ -134,6 +134,12 @@ docs.build:
 	@echo "〉building docs"
 	@cd docs && bun install && bun run build
 
+.PHONY: docs.diagrams
+## Render docs diagrams
+docs.diagrams:
+	@echo "〉rendering docs diagrams"
+	@go run docs/diagrams/gen.go
+
 .PHONY: godocs
 ## Open go docs
 godocs:

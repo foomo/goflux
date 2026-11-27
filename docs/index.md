@@ -14,7 +14,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: API Reference
-      link: /reference/
+      link: https://pkg.go.dev/github.com/foomo/goflux
 
 features:
   - title: Type-Safe Generics
@@ -26,7 +26,7 @@ features:
   - title: Request-Reply
     details: Type-safe Requester and Responder interfaces for synchronous messaging over NATS and HTTP.
   - title: Pipeline Operators
-    details: Pipe, PipeMap for message routing and transformation. ToStream/FromStream bridge to goflow for fan-out, fan-in, and stream processing.
+    details: pipe.New, pipe.NewMap, pipe.NewFlatMap for message routing and transformation. bridge.ToStream/FromStream bridge to goflow for fan-out, fan-in, and stream processing.
   - title: OpenTelemetry Built-In
     details: Tracing and metrics baked into every transport. Span links for async, parent-child for sync. No middleware setup required.
 ---

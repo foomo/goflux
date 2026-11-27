@@ -18,7 +18,7 @@ import (
 )
 
 // Publisher POSTs encoded messages to a base URL.
-// Subject is appended to BaseURL as the path: POST {BaseURL}/{nats}
+// Subject is appended to BaseURL as the path: POST {BaseURL}/{subject}
 type Publisher[T any] struct {
 	baseURL    string
 	encoder    goencode.Encoder[T, []byte]
@@ -42,7 +42,7 @@ func NewPublisher[T any](baseURL string, encoder goencode.Encoder[T, []byte], cl
 	return &Publisher[T]{baseURL: baseURL, encoder: encoder, httpClient: client, tel: cfg.tel}
 }
 
-// Publish encodes v and POSTs it to {baseURL}/{nats}.
+// Publish encodes v and POSTs it to {baseURL}/{subject}.
 // A non-2xx response is treated as an error.
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {

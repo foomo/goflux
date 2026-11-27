@@ -51,7 +51,7 @@ func NewRequester[Req, Resp any](
 	}
 }
 
-// Request sends req to {baseURL}/{nats} and returns the decoded response.
+// Request sends req to {baseURL}/{subject} and returns the decoded response.
 func (r *Requester[Req, Resp]) Request(ctx context.Context, subject string, req Req) (Resp, error) {
 	var result Resp
 

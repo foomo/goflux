@@ -31,6 +31,15 @@ func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []b
 
 // Publish encodes v and publishes it to subject, waiting for the stream to
 // persist the message before returning.
+//
+// A message ID from [goflux.WithMessageID] is also sent as the Nats-Msg-Id
+// header, so the stream drops a message with the same ID published within
+// its jetstream.StreamConfig.Duplicates window (default 2 minutes).
+// Subscribers do not put a received ID into the handler context, so
+// messages published from a handler carry no ID unless the handler sets one,
+// for example with [middleware.ForwardMessageID].
+//
+// [middleware.ForwardMessageID]: https://pkg.go.dev/github.com/foomo/goflux/middleware#ForwardMessageID
 func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 	return p.tel.RecordPublish(ctx, subject, system, func(ctx context.Context) error {
 		b, err := p.encoder(v)
@@ -51,6 +60,7 @@ func (p *Publisher[T]) Publish(ctx context.Context, subject string, v T) error {
 
 		if id := goflux.MessageID(ctx); id != "" {
 			msg.Header.Set(goflux.MessageIDHeader, id)
+			msg.Header.Set(jetstream.MsgIDHeader, id)
 		}
 
 		if h := goflux.HeaderFromContext(ctx); h != nil {

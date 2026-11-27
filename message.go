@@ -1,15 +1,54 @@
 package goflux
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Message is the unit passed to every Handler. Subject carries the routing
-// key (e.g. a NATS nats or HTTP path); Payload holds the decoded value;
-// Header carries optional metadata; acker provides acknowledgment controls.
+// key (e.g. a NATS subject or HTTP path); Payload holds the decoded value;
+// Header carries optional metadata; ID carries the message ID the publisher
+// set with [WithMessageID]; acker provides acknowledgment controls.
+//
+// Like Header, ID describes the received message only. Messages published
+// from a handler do not inherit it; use middleware.ForwardMessageID to
+// forward it explicitly.
 type Message[T any] struct {
-	Subject string `json:"nats"`
+	Subject string `json:"subject"`
 	Payload T      `json:"payload"`
 	Header  Header `json:"header,omitempty"`
+	ID      string `json:"id,omitempty"`
 	acker   Acker
+}
+
+// messageJSON is the JSON form of [Message], plus the "nats" key that
+// versions before v0.12 used for Subject.
+type messageJSON[T any] struct {
+	Subject       string `json:"subject"`
+	LegacySubject string `json:"nats"`
+	Payload       T      `json:"payload"`
+	Header        Header `json:"header,omitempty"`
+	ID            string `json:"id,omitempty"`
+}
+
+// UnmarshalJSON decodes a Message. It also accepts the "nats" key that
+// versions before v0.12 wrote for Subject; "subject" wins if both are set.
+func (m *Message[T]) UnmarshalJSON(b []byte) error {
+	v := messageJSON[T]{Payload: m.Payload, Header: m.Header}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+
+	m.Subject = v.Subject
+	if m.Subject == "" {
+		m.Subject = v.LegacySubject
+	}
+
+	m.Payload = v.Payload
+	m.Header = v.Header
+	m.ID = v.ID
+
+	return nil
 }
 
 // NewMessage creates a new Message.

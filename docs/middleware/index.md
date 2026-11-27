@@ -46,12 +46,18 @@ func KeepAlive[T any](interval time.Duration) Middleware[T]
 
 Calls `msg.InProgress()` every `interval` while the handler runs, so long-running handlers (imports, batch jobs) are not redelivered when they exceed the transport's ack timeout (JetStream `AckWait`). Choose an interval well below the timeout. The heartbeat stops before the handler's result is returned, so place it inside `AutoAck`/`RetryAck`:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../diagrams/middleware-chain.svg" alt="Chain(AutoAck, InjectMessageID)(handler): m1 passes AutoAck, then InjectMessageID, then the handler; nil returns through both and AutoAck acks"></div>
+
+```go [Code]
 handler := goflux.Chain[Event](
 	middleware.RetryAck[Event](middleware.NewBackoffRetryPolicy(time.Second, 5*time.Minute)),
 	middleware.KeepAlive[Event](10*time.Second),
 )(importHandler)
 ```
+
+:::
 
 `NewBackoffRetryPolicy` grows the nak delay with `msg.Delivery().NumDelivered`; see [Pull Consumer](/guide/patterns/pull-consumer).
 
@@ -61,7 +67,7 @@ handler := goflux.Chain[Event](
 func InjectMessageID[T any]() Middleware[T]
 ```
 
-Reads the message ID from the message's header (`X-Message-ID`) and injects it into the context via `WithMessageID`. Push-based transports do this automatically — this middleware is for handler chains that bypass built-in injection.
+Reads `msg.Header.Get("X-Message-ID")` and injects it into the context via `WithMessageID`, so messages published from the handler carry it. Transports expose the publisher's message ID as `msg.ID`, not in `msg.Header`. Use this middleware only when a publisher sets `X-Message-ID` as a goflux header via `WithHeader`; to forward `msg.ID`, use `ForwardMessageID`.
 
 ```go
 withID := middleware.InjectMessageID[Event]()(handler)
@@ -74,7 +80,7 @@ withID := middleware.InjectMessageID[Event]()(handler)
 func InjectHeader[T any]() Middleware[T]
 ```
 
-Injects the message's full `Header` into the context via `WithHeader`. Downstream code can read it with `HeaderFromContext`. Push-based transports do this automatically.
+Injects the message's full `Header` into the context via `WithHeader`. Downstream code can read it with `HeaderFromContext`. No transport does this automatically; the pipe operators do it for their own publishes.
 
 ```go
 withHeader := middleware.InjectHeader[Event]()(handler)
@@ -87,9 +93,11 @@ withHeader := middleware.InjectHeader[Event]()(handler)
 func ForwardMessageID[T any]() Middleware[T]
 ```
 
-Preserves the message ID from the incoming context through the handler chain. Use this with pipe's `WithMiddleware` to forward message IDs across pipe stages.
+Puts the received `msg.ID` into the context via `WithMessageID`, so messages published from the handler carry the same ID. Transports never forward the ID on their own. Use this with pipe's `WithMiddleware` to forward message IDs across pipe stages.
 
-Unlike `InjectMessageID` (which reads the ID from message headers set by transports), `ForwardMessageID` reads from context -- suitable for in-process handler chains where the ID is already in context.
+::: warning JetStream deduplication
+On JetStream the message ID is also the `Nats-Msg-Id`. A forwarded message that lands in the same stream as the received one, or several messages published with the same forwarded ID (for example by `pipe.NewFlatMap`), are dropped as duplicates within the stream's `Duplicates` window.
+:::
 
 ```go
 handler := pipe.New[Event](pub,
@@ -125,7 +133,7 @@ func LogDuration[T any]() goflux.Middleware[T] {
             start := time.Now()
             err := next(ctx, msg)
             slog.InfoContext(ctx, "handler completed",
-                slog.String("nats", msg.Subject),
+                slog.String("subject", msg.Subject),
                 slog.Duration("duration", time.Since(start)),
                 slog.Any("error", err),
             )

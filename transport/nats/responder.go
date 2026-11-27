@@ -55,7 +55,9 @@ func (r *Responder[Req, Resp]) Serve(ctx context.Context, subject string, handle
 // server has acknowledged the subscription, then blocks until ctx is cancelled.
 //
 // ready is called at most once and never after ServeWithReady returns. If
-// registration fails, the error is returned without calling ready.
+// registration fails, the error is returned without calling ready. After ready
+// was called, ServeWithReady returns the unsubscribe error on ctx cancellation,
+// for example when the connection is already closed.
 func (r *Responder[Req, Resp]) ServeWithReady(
 	ctx context.Context,
 	subject string,
@@ -66,7 +68,7 @@ func (r *Responder[Req, Resp]) ServeWithReady(
 		var req Req
 		if err := r.reqCodec.Decode(msg.Data, &req); err != nil {
 			slog.ErrorContext(ctx, "nats responder: decode failed, dropping request",
-				slog.String("nats", msg.Subject),
+				slog.String("subject", msg.Subject),
 				slog.Any("error", err),
 			)
 
@@ -75,12 +77,7 @@ func (r *Responder[Req, Resp]) ServeWithReady(
 
 		remoteSpanCtx := r.tel.ExtractSpanContext(ctx, natsHeaderCarrier{Headers: msg.Header})
 
-		msgCtx := ctx
-		if id := msg.Header.Get(goflux.MessageIDHeader); id != "" {
-			msgCtx = goflux.WithMessageID(msgCtx, id)
-		}
-
-		_ = r.tel.RecordProcess(msgCtx, subject, system, func(ctx context.Context) error {
+		_ = r.tel.RecordProcess(ctx, subject, system, func(ctx context.Context) error {
 			sp := trace.SpanFromContext(ctx)
 			sp.SetAttributes(
 				semconv.MessagingMessageBodySize(len(msg.Data)),
@@ -100,7 +97,7 @@ func (r *Responder[Req, Resp]) ServeWithReady(
 			sp.SetAttributes(gsemconv.ReplyBodySize(len(b)))
 
 			return msg.Respond(b)
-		}, goflux.WithRemoteSpanContext(remoteSpanCtx))
+		}, goflux.WithRemoteSpanContext(remoteSpanCtx), goflux.WithProcessMessageID(msg.Header.Get(goflux.MessageIDHeader)))
 	})
 	if err != nil {
 		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("nats: %w", err))

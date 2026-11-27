@@ -24,7 +24,11 @@ NATS has native request-reply support. The requester publishes to a subject with
 
 ### Requester
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/request-reply.svg" alt="Request sends req through NATS to the responder&#39;s handler; the reply resp travels back and Request returns it"></div>
+
+```go [Code]
 package main
 
 import (
@@ -70,6 +74,8 @@ func main() {
 	fmt.Printf("order %s created, total: %.2f\n", resp.ID, resp.Total)
 }
 ```
+
+:::
 
 ### Responder
 
