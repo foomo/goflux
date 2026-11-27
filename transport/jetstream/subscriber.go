@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/foomo/goencode"
 	"github.com/foomo/goflux"
@@ -16,10 +17,11 @@ import (
 // Subscriber decodes and dispatches messages pulled from a JetStream
 // consumer, with at-least-once delivery via ack/nak/term.
 type Subscriber[T any] struct {
-	consumer  jetstream.Consumer
-	decoder   goencode.Decoder[T, []byte]
-	tel       *goflux.Telemetry
-	manualAck bool
+	consumer    jetstream.Consumer
+	decoder     goencode.Decoder[T, []byte]
+	tel         *goflux.Telemetry
+	manualAck   bool
+	consumeOpts []jetstream.PullConsumeOpt
 }
 
 // NewSubscriber returns a Subscriber that pulls from consumer, decoding each
@@ -30,15 +32,17 @@ func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[
 	cfg := applyOpts(opts)
 
 	return &Subscriber[T]{
-		consumer:  consumer,
-		decoder:   decoder,
-		tel:       cfg.tel,
-		manualAck: cfg.manualAck,
+		consumer:    consumer,
+		decoder:     decoder,
+		tel:         cfg.tel,
+		manualAck:   cfg.manualAck,
+		consumeOpts: cfg.consumeOpts,
 	}
 }
 
 // Subscribe starts consuming messages and dispatching them to handler. The call
-// blocks until ctx is cancelled.
+// blocks until ctx is cancelled or consumption stops; see
+// [Subscriber.SubscribeWithReady].
 //
 // Note: the nats parameter is used only for telemetry labeling. Actual
 // message filtering is determined by the jetstream.Consumer configuration
@@ -48,7 +52,17 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 }
 
 // SubscribeWithReady behaves like [Subscriber.Subscribe] but invokes ready once
-// the consumer is established, then blocks until ctx is cancelled.
+// the consumer is established, then blocks until ctx is cancelled (returning
+// nil) or consumption stops on its own (returning an error).
+//
+// Consume errors, such as missing heartbeats while the consumer does not exist
+// on the server (deleted, or lost in a server restart), are logged via slog and
+// consumption keeps retrying every pull expiry ([DefaultPullExpiry]), so a
+// recreated consumer is picked up again. Terminal errors, such as the
+// connection being closed or the server reporting the consumer as deleted
+// while a pull is pending, stop consumption; SubscribeWithReady then returns
+// an error wrapping [goflux.ErrSubscribe] instead of blocking silently. Use
+// [WithConsumeOpts] to tune pull timing or replace the error handler.
 //
 // jetstream.Consumer.Consume sets up the pull consumer synchronously, so the
 // subscription exists once it returns without error. JetStream also persists
@@ -65,6 +79,20 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 			consumerGroup = info.Name
 		}
 	}
+
+	var lastErr atomic.Pointer[error]
+
+	opts := append([]jetstream.PullConsumeOpt{
+		jetstream.PullExpiry(DefaultPullExpiry),
+		jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
+			lastErr.Store(&err)
+			slog.WarnContext(ctx, "jetstream subscriber: consume error",
+				slog.String("nats", subject),
+				slog.String("consumer", consumerGroup),
+				slog.Any("error", err),
+			)
+		}),
+	}, s.consumeOpts...)
 
 	cc, err := s.consumer.Consume(func(msg jetstream.Msg) {
 		var v T
@@ -123,18 +151,28 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 		if !s.manualAck {
 			_ = msg.Ack()
 		}
-	})
+	}, opts...)
 	if err != nil {
 		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("jetstream: %w", err))
 	}
 
 	ready()
 
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+		cc.Stop()
 
-	cc.Stop()
+		return nil
+	case <-cc.Closed():
+		// Best effort: nats.go may close the consume context before the
+		// error handler has recorded the cause.
+		cause := errors.New("unknown cause")
+		if err := lastErr.Load(); err != nil {
+			cause = *err
+		}
 
-	return nil
+		return errors.Join(goflux.ErrSubscribe, goflux.ErrTransport, fmt.Errorf("jetstream: consume stopped: %w", cause))
+	}
 }
 
 // Close is a no-op. The caller owns the jetstream.Consumer and the

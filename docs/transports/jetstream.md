@@ -29,7 +29,7 @@ func NewPublisher[T any](js jetstream.JetStream, encoder goencode.Encoder[T, []b
 func NewSubscriber[T any](consumer jetstream.Consumer, decoder goencode.Decoder[T, []byte], opts ...Option) *Subscriber[T]
 ```
 
-`Subscribe` starts a consumption loop using the JetStream consumer's `Consume()` method, which works for both push and pull consumers. It blocks until the context is cancelled, then stops the consume context. Decode failures cause the message to be terminated (`msg.Term()`).
+`Subscribe` starts a consumption loop using the JetStream consumer's `Consume()` method, which works for both push and pull consumers. It blocks until the context is cancelled, then stops the consume context and returns `nil`. If consumption stops on its own (a terminal error, see [Consumer loss and recovery](#consumer-loss-and-recovery)), it returns an error wrapping `goflux.ErrSubscribe` instead of blocking. Decode failures cause the message to be terminated (`msg.Term()`).
 
 ```go
 func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, handler goflux.Handler[T], ready func()) error
@@ -69,6 +69,7 @@ func NewStream(ctx context.Context, nc *nats.Conn, cfg jetstream.StreamConfig, o
 |--------|-----------|-------------|
 | `WithTelemetry(t *goflux.Telemetry)` | All | Sets the OTel telemetry instance. A default is created from OTel globals if not provided. |
 | `WithManualAck()` | Subscriber | Disables auto-ack. The handler must call `msg.Ack()`, `msg.Nak()`, `msg.NakWithDelay()`, or `msg.Term()` on every message. |
+| `WithConsumeOpts(opts ...jetstream.PullConsumeOpt)` | Subscriber | Passes options to `jetstream.Consumer.Consume`, e.g. `jetstream.PullExpiry`, `jetstream.PullHeartbeat`, `jetstream.PullMaxMessages`, `jetstream.ConsumeErrHandler`. Applied after the goflux defaults, so they override them. |
 
 ## Behavior
 
@@ -76,6 +77,17 @@ func NewStream(ctx context.Context, nc *nats.Conn, cfg jetstream.StreamConfig, o
 - **Stream and consumer configuration** -- retention policy, delivery policy, replay policy, and other JetStream settings are configured via `jetstream.StreamConfig` and `jetstream.ConsumerConfig` directly. goflux does not abstract these.
 - **OTel context propagation** -- uses span links (not parent-child) because async messaging is temporally decoupled. The producer's span context is extracted and attached as a link on the consumer span.
 - **Message ID** -- if `goflux.MessageID(ctx)` is set, it is propagated via the `X-Message-ID` header.
+
+## Consumer loss and recovery
+
+The consumer can disappear while `Subscribe` is running: it is deleted, or a NATS server with in-memory (or non-persistent) JetStream state restarts empty.
+
+- **Errors are logged.** The subscriber installs a `jetstream.ConsumeErrHandler` that logs every consume error with `slog.WarnContext` (subject, consumer, error). Override it with `WithConsumeOpts(jetstream.ConsumeErrHandler(...))`.
+- **A missing consumer is retried.** `Consume` keeps issuing pull requests; each failed cycle is logged (`no heartbeat received`, `no responders available for request`). Once the consumer exists again, delivery resumes on the original `Subscribe` call within about one pull expiry.
+- **Faster default pull expiry.** goflux uses `DefaultPullExpiry` (10s; idle heartbeat 5s) instead of nats.go's 30s, so recovery takes at most about 10s. Tune it with `WithConsumeOpts(jetstream.PullExpiry(...), jetstream.PullHeartbeat(...))`.
+- **Terminal errors return.** When nats.go stops consumption itself -- for example the connection is closed, or the server reports the consumer as deleted while a pull is pending -- `Subscribe` returns an error wrapping `goflux.ErrSubscribe` (with the cause when known), so a supervisor can restart it.
+
+Something must recreate the stream and consumer after state loss. With [NACK](https://github.com/nats-io/nack), run the controller with `--control-loop`: it re-applies Stream and Consumer resources every `--sync-interval` (default 1m). The default (legacy) mode only acts on resource changes and does not recreate resources lost on the server.
 
 ## Push Subscriber with Auto-Ack
 
