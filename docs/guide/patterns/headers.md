@@ -20,7 +20,11 @@ type Header map[string][]string
 
 Attach headers to outgoing messages by storing them in the context with `goflux.WithHeader`:
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/headers.svg" alt="The publisher reads X-Tenant-ID from the context header; NATS and HTTP carry it as X-Goflux-X-Tenant-ID; the subscriber strips the prefix and the handler reads X-Tenant-ID from msg.Header"></div>
+
+```go [Code]
 package main
 
 import (
@@ -55,6 +59,8 @@ func main() {
 	})
 }
 ```
+
+:::
 
 ## Reading Headers in a Handler
 

@@ -8,7 +8,11 @@ Use a consumer with `AckPolicy: jetstream.AckExplicitPolicy` (the nats.go defaul
 
 ## JetStream Pull Consumer with Middleware
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/pull-consumer.svg" alt="The subscriber pulls 2 messages from JetStream, the handler processes t1 and t2, then the subscriber pulls the next 2 and the handler processes t3 and t4"></div>
+
+```go [Code]
 package main
 
 import (
@@ -82,6 +86,8 @@ func main() {
 
 func processTask(_ Task) error { return nil }
 ```
+
+:::
 
 ## Processing Patterns
 

@@ -54,6 +54,17 @@ linters:
 
   # https://golangci-lint.run/docs/linters/
   settings:
+    # https://golangci-lint.run/docs/linters/configuration/#forbidigo
+    forbidigo:
+      forbid:
+        # default
+        - pattern: ^(fmt\.Print(|f|ln)|print|println)$
+        - pkg: ^golang.org/x/crypto/openpgp$
+          msg: "If you are required to interoperate with OpenPGP systems and need a maintained package, consider github.com/ProtonMail/go-crypto/openpgp."
+        - pattern: ^errors\.Cause$
+          pkg: ^github.com/pkg/errors$
+          msg: "Use github.com/foomo/go/errors.Cause() or standard library errors.As() or errors.Unwrap() instead."
+      analyze-types: true
     # https://golangci-lint.run/docs/linters/configuration/#exhaustive
     exhaustive:
       default-signifies-exhaustive: true
@@ -74,7 +85,6 @@ linters:
       toolchain-forbidden: true
       go-version-pattern: '\d\.\d+'
   exclusions:
-    warn-unused: true
     presets:
       - comments
       - common-false-positives
@@ -85,8 +95,15 @@ linters:
         linters:
           - forbidigo
     paths:
-      - docs
-      - tmp
+      - (^|/)\..*
+      - (^|/)bin($|/)
+      - (^|/)dist($|/)
+      - (^|/)tmp($|/)
+      - (^|/)docs($|/)
+      - (^|/)devops($|/)
+      - (^|/)vendor($|/)
+      - (^|/)third_party($|/)
+      - (^|/)node_modules($|/)
 
 # https://golangci-lint.run/docs/formatters/
 formatters:

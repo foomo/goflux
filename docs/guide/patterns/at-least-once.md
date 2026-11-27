@@ -68,7 +68,11 @@ func process(_ Event) error { return nil }
 
 For fine-grained control, enable manual acknowledgment with `gofluxjs.WithManualAck()`. The handler is then responsible for calling one of the ack methods on every message.
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/manual-ack.svg" alt="With WithManualAck the handler acks m1; it naks m2 with a 5s delay, JetStream redelivers m2 after the delay and the handler acks it; it terminates m3, which is not redelivered"></div>
+
+```go [Code]
 sub := gofluxjs.NewSubscriber[Event](consumer, codec.Decode, gofluxjs.WithManualAck())
 
 _ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[Event]) error {
@@ -79,6 +83,8 @@ _ = sub.Subscribe(ctx, "events.>", func(ctx context.Context, msg goflux.Message[
 	return msg.Ack()
 })
 ```
+
+:::
 
 ### Acknowledgment Methods
 
@@ -110,6 +116,25 @@ handler := middleware.AutoAck[Event]()(func(ctx context.Context, msg goflux.Mess
 ```
 
 `AutoAck` is a standard `Middleware[T]` and composes with `Chain`.
+
+## Publish Deduplication
+
+JetStream drops a message whose ID it already saw within `StreamConfig.Duplicates` (default 2 minutes). Set the ID with `goflux.WithMessageID`; the publisher sends it as `Nats-Msg-Id`. A retried publish with the same ID is then stored once.
+
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/dedup.svg" alt="The publisher sends m1, retries m1 with the same message ID, then sends m2; JetStream drops the second m1 as a duplicate, so the handler gets m1 and m2 once"></div>
+
+```go [Code]
+ctx = goflux.WithMessageID(ctx, order.ID)
+
+// A retry after a timeout reuses the ID, so the stream stores the message once.
+_ = pub.Publish(ctx, "events.order", order)
+```
+
+:::
+
+See [JetStream behavior](/transports/jetstream#behavior) for forwarding IDs from a handler.
 
 ## When to Use
 

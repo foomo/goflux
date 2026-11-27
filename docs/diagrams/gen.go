@@ -72,6 +72,12 @@ func diagrams() []*diagram {
 		readiness(),
 		fireAndForget(),
 		atLeastOnce(),
+		manualAck(),
+		dedup(),
+		pullConsumer(),
+		streamProcessor(),
+		headers(),
+		httpIngest(),
 		requestReply(),
 		queueGroups(),
 		middlewareChain(),
@@ -95,9 +101,20 @@ func diagrams() []*diagram {
 // linear is the basic flow: messages queue left, pass every box and come out
 // right. outs[i] is the class of the output for ins[i].
 func linear(name, alt string, boxes []string, ins, outs []string) *diagram {
+	return chain(name, alt, boxes, ins, outs, nil, "")
+}
+
+// chain is linear, but drop maps an index of ins to the index of the box that
+// drops it. A dropped message turns red and stays below that box, marked with
+// dropLabel.
+func chain(name, alt string, boxes []string, ins, outs []string, drop map[int]int, dropLabel string) *diagram {
 	const y, boxW, boxGap = 55.0, 130.0, 60.0
 
-	d := newDiagram(name, alt, 0, 110)
+	h := 110.0
+	if len(drop) > 0 {
+		h = 165
+	}
+	d := newDiagram(name, alt, 0, h)
 	x0, gate := d.queue(ins, 20)
 	gate += boxGap
 
@@ -113,18 +130,38 @@ func linear(name, alt string, boxes []string, ins, outs []string) *diagram {
 		d.wire(cx[i-1]+boxW/2, y, cx[i]-boxW/2, y)
 	}
 	d.wire(exit, y, exit+boxGap, y)
-	slots := d.slots(ins, exit+boxGap+10)
+
+	var kept []string
+	for i, m := range ins {
+		if _, ok := drop[i]; !ok {
+			kept = append(kept, m)
+		}
+	}
+	slots := d.slots(kept, exit+boxGap+10)
 	d.w = slots[len(slots)-1] + 40
 
+	n := 0
 	for i, m := range ins {
 		t := 0.4 + float64(i)*1.6
 		k := d.tok("in", m, x0[i], y, true).keep().until(t).enter(x0[i], gate, cx[0], y, i < len(ins)-1)
+		if b, ok := drop[i]; ok {
+			for _, x := range cx[1 : b+1] {
+				k.to(x, y)
+			}
+			done := k.now()
+			k.hide()
+			d.text(cx[b], y+80, "", dropLabel)
+			d.tok("err", m, cx[b], y, false).until(done).show().to(cx[b], y+50).keep()
+
+			continue
+		}
 		for _, x := range cx[1:] {
 			k.to(x, y)
 		}
 		done := k.now()
 		k.hide()
-		d.tok(outs[i], m, cx[len(cx)-1], y, false).until(done).show().leave(exit, slots[i], y, i > 0).keep()
+		d.tok(outs[i], m, cx[len(cx)-1], y, false).until(done).show().leave(exit, slots[n], y, n > 0).keep()
+		n++
 	}
 
 	return d
@@ -248,22 +285,39 @@ func readiness() *diagram {
 }
 
 func atLeastOnce() *diagram {
+	return ackFlow("at-least-once",
+		"The handler acks m1; it fails on m2, JetStream gets a nak and redelivers m2, then the handler acks it",
+		"Handler", "ack / nak",
+		[]string{"m1", "m2"}, [][]string{{"ack"}, {"nak", "ack"}})
+}
+
+func manualAck() *diagram {
+	return ackFlow("manual-ack",
+		"With WithManualAck the handler acks m1; it naks m2 with a 5s delay, JetStream redelivers m2 after the delay and the handler acks it; it terminates m3, which is not redelivered",
+		"Handler\nWithManualAck", "ack / nak / term",
+		[]string{"m1", "m2", "m3"}, [][]string{{"ack"}, {"nak 5s", "ack"}, {"term"}})
+}
+
+// ackFlow delivers each of ins from JetStream to the handler, which answers
+// with replies[i] in turn. Every reply before the last redelivers the message;
+// a reply with a delay ("nak 5s") waits before the redelivery. The last reply
+// is "ack" (handled) or "term" (dropped).
+func ackFlow(name, alt, handler, label string, ins []string, replies [][]string) *diagram {
 	const y, lane = 55.0, 108.0
 
-	d := newDiagram("at-least-once",
-		"The handler acks m1; it fails on m2, JetStream gets a nak and redelivers m2, then the handler acks it", 0, 160)
-	x0, gate := d.queue([]string{"m1", "m2"}, 20)
+	d := newDiagram(name, alt, 0, 160)
+	x0, gate := d.queue(ins, 20)
 	js, h := gate+30+65, gate+30+65+200
 
 	d.wire(gate, y, js-65, y)
 	d.wire(js+65, y, h-65, y)
 	d.wire(h+65, y, h+95, y)
 	d.wire(h, y+25, h, lane, js, lane, js, y+25)
-	d.text((js+h)/2, lane+30, "", "ack / nak")
+	d.text((js+h)/2, lane+30, "", label)
 	d.box(js, y, 130, 50, "JetStream\nEVENTS")
-	d.box(h, y, 130, 50, "Handler")
-	slots := d.slots([]string{"m1", "m2"}, h+105)
-	d.w = slots[1] + 40
+	d.box(h, y, 130, 50, handler)
+	slots := d.slots(ins, h+105)
+	d.w = slots[len(slots)-1] + 40
 
 	back := func(class, text string, t float64) float64 {
 		k := d.tok(class, text, h, y, false).until(t).show().to(h, lane).to(js, lane).to(js, y)
@@ -273,23 +327,125 @@ func atLeastOnce() *diagram {
 		return done
 	}
 
-	// m1: delivered, handled, acked.
-	k := d.tok("in", "m1", x0[0], y, true).keep().until(0.4).enter(x0[0], gate, js, y, true).wait(0.3).to(h, y)
+	t := 0.4
+	for i, m := range ins {
+		k := d.tok("in", m, x0[i], y, true).keep().until(t).enter(x0[i], gate, js, y, i < len(ins)-1).wait(0.3).to(h, y)
+		done := k.now()
+		k.hide()
+
+		rs := replies[i]
+		for _, r := range rs[:len(rs)-1] {
+			done = back("err", r, done+0.2)
+			if strings.Contains(r, " ") {
+				done += 0.8
+			}
+			k = d.tok("in", m, js, y, false).until(done+0.2).show().to(h, y)
+			done = k.now()
+			k.hide()
+		}
+
+		class := "out"
+		if rs[len(rs)-1] != "ack" {
+			class = "err"
+		}
+		back(class, rs[len(rs)-1], done+0.2)
+		d.tok(class, m, h, y, false).until(done+0.2).show().leave(h+65, slots[i], y, i > 0).keep()
+		t = done
+	}
+
+	return d
+}
+
+func dedup() *diagram {
+	return chain("dedup",
+		"The publisher sends m1, retries m1 with the same message ID, then sends m2; JetStream drops the second m1 as a duplicate, so the handler gets m1 and m2 once",
+		[]string{"Publisher\nWithMessageID", "JetStream\nNats-Msg-Id", "Handler"},
+		[]string{"m1", "m1", "m2"}, []string{"out", "", "out"}, map[int]int{1: 1}, "duplicate ID")
+}
+
+func streamProcessor() *diagram {
+	return chain("stream-processor",
+		"ToStream feeds e1, e2, e1, e3 into Distinct, which drops the second e1; Peek logs each remaining event and Process(10) handles e1, e2, e3",
+		[]string{"Distinct\nby ID", "Peek\nlog", "Process(10)\nhandle"},
+		[]string{"e1", "e2", "e1", "e3"}, []string{"out", "out", "", "out"}, map[int]int{2: 0}, "duplicate")
+}
+
+func pullConsumer() *diagram {
+	const y, lane = 55.0, 108.0
+
+	d := newDiagram("pull-consumer",
+		"The subscriber pulls 2 messages from JetStream, the handler processes t1 and t2, then the subscriber pulls the next 2 and the handler processes t3 and t4", 0, 160)
+	ins := []string{"t1", "t2", "t3", "t4"}
+	x0, gate := d.queue(ins, 20)
+	js := gate + 30 + 65
+	c := js + 65 + 60 + 80
+	h := c + 80 + 60 + 65
+
+	d.wire(gate, y, js-65, y)
+	d.wire(js+65, y, c-80, y)
+	d.wire(c+80, y, h-65, y)
+	d.wire(h+65, y, h+95, y)
+	d.wire(c, y+25, c, lane, js, lane, js, y+25)
+	d.text((js+c)/2, lane+30, "", "pull 2 when idle")
+	d.box(js, y, 130, 50, "JetStream\nTASKS")
+	d.box(c, y, 160, 50, "Subscriber\npulls 2 at a time")
+	d.box(h, y, 130, 50, "Handler\nRetryAck")
+	slots := d.slots(ins, h+105)
+	d.w = slots[len(slots)-1] + 40
+
+	t, free := 0.4, 0.0
+	for b := range 2 {
+		k := d.tok("out", "pull", c, y, false).until(t).show().to(c, lane).to(js, lane).to(js, y)
+		t = k.now()
+		k.hide()
+
+		for j := range 2 {
+			i := b*2 + j
+			k = d.tok("in", ins[i], x0[i], y, true).keep().until(t+float64(j)*0.5).enter(x0[i], gate, js, y, i < len(ins)-1).to(c, y)
+			free = math.Max(free, k.now())
+			k.until(free).to(h, y)
+			arrive := k.now()
+			k.hide()
+			d.tok("out", ins[i], h, y, false).until(arrive+0.4).show().leave(h+65, slots[i], y, i > 0).keep()
+			free = arrive + 0.6
+		}
+		t = free
+	}
+
+	return d
+}
+
+func headers() *diagram {
+	const y, boxW = 70.0, 140.0
+
+	d := newDiagram("headers",
+		"The publisher reads X-Tenant-ID from the context header; NATS and HTTP carry it as X-Goflux-X-Tenant-ID; the subscriber strips the prefix and the handler reads X-Tenant-ID from msg.Header", 0, 120)
+	in, wire := "X-Tenant-ID", "X-Goflux-X-Tenant-ID"
+	start := 20 + tokenW(in)/2
+	cx := []float64{220, 520, 760}
+	labels := []string{"Publisher\nPublish(ctx, …)", "Transport\nNATS / HTTP", "Subscriber\nmsg.Header"}
+
+	d.wire(start+tokenW(in)/2+10, y, cx[0]-boxW/2, y)
+	for i, x := range cx {
+		d.box(x, y, boxW, 50, labels[i])
+		if i > 0 {
+			d.wire(cx[i-1]+boxW/2, y, x-boxW/2, y)
+		}
+	}
+	d.wire(cx[2]+boxW/2, y, cx[2]+boxW/2+20, y)
+	d.text(20, y-45, "s", "goflux.WithHeader(ctx, …)")
+	d.text((cx[0]+cx[1])/2, y-45, "", "wire header")
+	d.text(cx[2]+boxW/2+20, y-45, "s", "msg.Header.Get(…)")
+	end := cx[2] + boxW/2 + 30 + tokenW(in)/2
+	d.w = end + tokenW(in)/2 + 40
+
+	k := d.tok("in", in, start, y, true).keep().until(0.4).to(cx[0], y)
 	done := k.now()
 	k.hide()
-	back("out", "ack", done+0.2)
-	d.tok("out", "m1", h, y, false).until(done+0.2).show().leave(h+65, slots[0], y, false).keep()
-
-	// m2: delivered, fails, nak, redelivered, acked.
-	k = d.tok("in", "m2", x0[1], y, true).keep().until(done).enter(x0[1], gate, js, y, false).wait(0.3).to(h, y)
+	k = d.tok("mid", wire, cx[0], y, false).until(done).show().to(cx[1], y).wait(0.3).to(cx[2], y)
 	done = k.now()
 	k.hide()
-	done = back("err", "nak", done+0.2)
-	k = d.tok("in", "m2", js, y, false).until(done+0.2).show().to(h, y)
-	done = k.now()
-	k.hide()
-	back("out", "ack", done+0.2)
-	d.tok("out", "m2", h, y, false).until(done+0.2).show().leave(h+65, slots[1], y, true).keep()
+	d.tok("out", in, cx[2], y, false).until(done).show().to(end, y).keep()
 
 	return d
 }
@@ -740,6 +896,96 @@ func fanIn(name, alt string, labels [2]string, ins [2][]string) *diagram {
 		hits = append(hits[:j], hits[j+1:]...)
 		n := len(order) - 1 - len(hits)
 		d.tok("out", h.text, fanIn, mid, false).until(h.t).show().leave(exit, slots[n], mid, n > 0).keep()
+	}
+
+	return d
+}
+
+func httpIngest() *diagram {
+	const boxW, mid = 120.0, 85.0
+
+	d := newDiagram("http-ingest",
+		"POST /orders sends o1, o2 and POST /payments sends p1, p2; each HTTP handler converts them into events and publishes them to NATS events.>; the store queue group splits the events between Store A and Store B, each collects a batch of 2 and inserts it into the database in one transaction", 0, 190)
+	rows := []struct {
+		y     float64
+		label string
+		ins   []string
+	}{
+		{40, "HTTP\n/orders", []string{"o1", "o2"}},
+		{130, "HTTP\n/payments", []string{"p1", "p2"}},
+	}
+	_, gate := d.queue(rows[0].ins, 20)
+	hb := gate + 30 + boxW/2
+	merge := hb + boxW/2 + 25
+	nats := merge + 30 + 65
+	split := nats + 65 + 25
+	st := split + 30 + boxW/2
+	join := st + boxW/2 + 25
+	db := join + 30 + 65
+	slots := d.slots([]string{"[o1 p1]", "[o2 p2]"}, db+65+40)
+	d.w = slots[1] + 40
+
+	d.box(nats, mid, 130, 50, "NATS\nevents.>")
+	d.box(db, mid, 130, 50, "Database\nINSERT batch")
+	d.wire(db+65, mid, db+65+30, mid)
+	d.text(st, 175, "", "queue group: event-store")
+
+	type hit struct {
+		t    float64
+		text string
+	}
+	var hits []hit
+	for r, row := range rows {
+		x0, gate := d.queue(row.ins, 20)
+		d.wire(gate, row.y, hb-boxW/2, row.y)
+		d.wire(hb+boxW/2, row.y, merge, row.y, merge, mid, nats-65, mid)
+		d.box(hb, row.y, boxW, 50, row.label)
+		for i, m := range row.ins {
+			start := 0.4 + float64(i)*2.4 + float64(r)*1.2
+			k := d.tok("in", m, x0[i], row.y, true).keep().until(start).enter(x0[i], gate, hb, row.y, i < len(row.ins)-1)
+			done := k.now()
+			k.hide()
+			k = d.tok("mid", m, hb, row.y, false).until(done).show().to(merge, row.y).to(merge, mid).to(nats, mid)
+			hits = append(hits, hit{k.now(), m})
+			k.hide()
+		}
+	}
+
+	// The queue group delivers each event to one store instance.
+	stores := []struct {
+		y     float64
+		label string
+	}{{40, "Store A\nBatch(2)"}, {130, "Store B\nBatch(2)"}}
+	for _, s := range stores {
+		d.wire(nats+65, mid, split, mid, split, s.y, st-boxW/2, s.y)
+		d.wire(st+boxW/2, s.y, join, s.y, join, mid, db-65, mid)
+		d.box(st, s.y, boxW, 50, s.label)
+	}
+
+	got := make([][]hit, len(stores))
+	for n := range hits {
+		j := n
+		for i := n; i < len(hits); i++ {
+			if hits[i].t < hits[j].t {
+				j = i
+			}
+		}
+		hits[n], hits[j] = hits[j], hits[n]
+		h := hits[n]
+		s := n / 2
+		y := stores[s].y
+		k := d.tok("mid", h.text, nats, mid, false).until(h.t).show().to(split, mid).to(split, y).to(st, y)
+		got[s] = append(got[s], hit{k.now(), h.text})
+		k.hide()
+	}
+
+	for s, g := range got {
+		y := stores[s].y
+		text := "[" + g[0].text + " " + g[1].text + "]"
+		k := d.tok("mid", text, st, y, false).until(g[1].t+0.3).show().to(join, y).to(join, mid).to(db, mid)
+		done := k.now()
+		k.hide()
+		d.tok("out", text, db, mid, false).until(done+0.3).show().leave(db+65, slots[s], mid, s > 0).keep()
 	}
 
 	return d

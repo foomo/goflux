@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1012 120" width="1012" height="120" role="img" aria-label="The publisher reads X-Tenant-ID from the context header; NATS and HTTP carry it as X-Goflux-X-Tenant-ID; the subscriber strips the prefix and the handler reads X-Tenant-ID from msg.Header">
+<style>
+text{font:600 14px ui-monospace,SFMono-Regular,Menlo,monospace;text-anchor:middle;dominant-baseline:central;fill:#303446}
+.op{fill:#c6d0f5}
+.sub{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#a5adce}
+.lbl{font:500 13px ui-sans-serif,system-ui,sans-serif;fill:#838ba7}
+.s{text-anchor:start}.e{text-anchor:end}
+.in{fill:#8caaee}.mid{fill:#ca9ee6}.out{fill:#a6d189}.err{fill:#e78284}
+.box{fill:#414559;stroke:#838ba7;stroke-width:1.5}
+.wire{stroke:#838ba7;stroke-width:1.5;stroke-dasharray:4 4;fill:none}
+.zone{fill:none;stroke:#626880;stroke-width:1.5;stroke-dasharray:8 5}
+@media (prefers-reduced-motion:reduce){g{animation:none!important}.k{opacity:1}.h{opacity:0}}
+</style>
+<style>
+@keyframes t0{0.000%{transform:translate(0.0px,0.0px);opacity:1}4.494%{transform:translate(0.0px,0.0px);opacity:1}15.266%{transform:translate(143.8px,0.0px);opacity:1}18.075%{transform:translate(143.8px,0.0px);opacity:0}93.258%{transform:translate(143.8px,0.0px);opacity:0}96.629%{transform:translate(143.8px,0.0px);opacity:0}96.742%{transform:translate(0.0px,0.0px);opacity:0}100.000%{transform:translate(0.0px,0.0px);opacity:1}}.t0{animation:t0 8.90s linear infinite}
+@keyframes t1{0.000%{transform:translate(0.0px,0.0px);opacity:0}15.266%{transform:translate(0.0px,0.0px);opacity:0}18.075%{transform:translate(0.0px,0.0px);opacity:1}40.547%{transform:translate(300.0px,0.0px);opacity:1}43.918%{transform:translate(300.0px,0.0px);opacity:1}61.895%{transform:translate(540.0px,0.0px);opacity:1}64.704%{transform:translate(540.0px,0.0px);opacity:0}93.258%{transform:translate(540.0px,0.0px);opacity:0}96.629%{transform:translate(540.0px,0.0px);opacity:0}96.742%{transform:translate(0.0px,0.0px);opacity:0}100.000%{transform:translate(0.0px,0.0px);opacity:0}}.t1{animation:t1 8.90s linear infinite}
+@keyframes t2{0.000%{transform:translate(-156.2px,0.0px);opacity:0}61.895%{transform:translate(-156.2px,0.0px);opacity:0}64.704%{transform:translate(-156.2px,0.0px);opacity:1}76.404%{transform:translate(0.0px,0.0px);opacity:1}93.258%{transform:translate(0.0px,0.0px);opacity:1}96.629%{transform:translate(0.0px,0.0px);opacity:0}96.742%{transform:translate(-156.2px,0.0px);opacity:0}100.000%{transform:translate(-156.2px,0.0px);opacity:0}}.t2{animation:t2 8.90s linear infinite}
+</style>
+<path class="wire" d="M142.4 70.0L150.0 70.0"/><path class="wire" d="M290.0 70.0L450.0 70.0"/><path class="wire" d="M590.0 70.0L690.0 70.0"/><path class="wire" d="M830.0 70.0L850.0 70.0"/><text class="lbl s" x="20.0" y="25.0">goflux.WithHeader(ctx, …)</text><text class="lbl " x="370.0" y="25.0">wire header</text><text class="lbl s" x="850.0" y="25.0">msg.Header.Get(…)</text><g class="t0 k"><rect class="in" x="20.0" y="55.0" width="112.4" height="30" rx="15"/><text x="76.2" y="70.0">X-Tenant-ID</text></g><g class="t1 h"><rect class="mid" x="126.0" y="55.0" width="188.0" height="30" rx="15"/><text x="220.0" y="70.0">X-Goflux-X-Tenant-ID</text></g><g class="t2 k"><rect class="out" x="860.0" y="55.0" width="112.4" height="30" rx="15"/><text x="916.2" y="70.0">X-Tenant-ID</text></g><rect class="box" x="150.0" y="45.0" width="140.0" height="50.0" rx="10"/><text class="op" x="220.0" y="61.0">Publisher</text><text class="sub" x="220.0" y="80.0">Publish(ctx, …)</text><rect class="box" x="450.0" y="45.0" width="140.0" height="50.0" rx="10"/><text class="op" x="520.0" y="61.0">Transport</text><text class="sub" x="520.0" y="80.0">NATS / HTTP</text><rect class="box" x="690.0" y="45.0" width="140.0" height="50.0" rx="10"/><text class="op" x="760.0" y="61.0">Subscriber</text><text class="sub" x="760.0" y="80.0">msg.Header</text>
+</svg>

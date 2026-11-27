@@ -45,6 +45,7 @@ export default defineConfig({
 					{ text: 'Fan-Out & Fan-In', link: '/guide/patterns/fan-out-fan-in' },
 					{ text: 'Stream Processing', link: '/guide/patterns/stream-processor' },
 					{ text: 'Headers', link: '/guide/patterns/headers' },
+					{ text: 'HTTP Ingest', link: '/guide/patterns/http-ingest' },
 				],
 			},
 			{
@@ -61,6 +62,7 @@ export default defineConfig({
 			},
 			{
 				text: 'Composition',
+				collapsed: true,
 				items: [
 					{ text: 'Middleware', link: '/middleware/' },
 					{ text: 'Pipeline', link: '/pipeline/' },

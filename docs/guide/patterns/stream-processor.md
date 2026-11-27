@@ -4,7 +4,11 @@ Stream processing combines goflux transports with [goflow](https://github.com/fo
 
 ## Overview
 
-```go
+::: code-group
+
+<div class="vp-block active" data-title="Diagram"><img src="../../diagrams/stream-processor.svg" alt="ToStream feeds e1, e2, e1, e3 into Distinct, which drops the second e1; Peek logs each remaining event and Process(10) handles e1, e2, e3"></div>
+
+```go [Code]
 stream := bridge.ToStream[Event](ctx, sub, "events.>", 16)
 
 // Apply goflow operators for stream processing.
@@ -17,6 +21,8 @@ stream.
         return handleEvent(ctx, msg.Payload)
     })
 ```
+
+:::
 
 ## Retry-Aware Acknowledgment
 
