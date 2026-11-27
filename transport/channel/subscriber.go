@@ -72,7 +72,9 @@ func (s *Subscriber[T]) SubscribeWithReady(ctx context.Context, subject string, 
 	defer func() {
 		s.bus.unsubscribe(subject, ch)
 		s.mu.Lock()
-		s.ch = nil
+		if s.ch == ch {
+			s.ch = nil
+		}
 		s.mu.Unlock()
 
 		unregisterLag()

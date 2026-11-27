@@ -53,6 +53,12 @@ type Telemetry struct {
 	lagMu sync.Mutex
 	lags  map[*lagSource]struct{}
 
+	// lagReg is the observeLag callback registration, held only while lag
+	// sources exist. regMu guards it and is never taken by observeLag, so
+	// registering never waits on a running collection that waits on lagMu.
+	regMu  sync.Mutex
+	lagReg metric.Registration
+
 	// destinationTemplate maps a subject to its metric template; nil records
 	// the concrete subject.
 	destinationTemplate func(subject string) string
@@ -200,10 +206,6 @@ func NewTelemetry(opts ...TelemetryOption) (*Telemetry, error) {
 	t.consumerLag, err = gofluxconv.NewConsumerLag(m)
 	if err != nil {
 		return nil, fmt.Errorf("messaging telemetry: consumer lag: %w", err)
-	}
-
-	if _, err := m.RegisterCallback(t.observeLag, t.consumerLag.Inst()); err != nil {
-		return nil, fmt.Errorf("messaging telemetry: consumer lag callback: %w", err)
 	}
 
 	return t, nil
@@ -412,28 +414,54 @@ func (t *Telemetry) RecordRequest(ctx context.Context, subject string, system se
 
 // RegisterLag reports lagFn on the goflux.consumer.lag gauge for subject,
 // mapped through [WithDestinationTemplate] when configured. The lag of all
-// registrations with the same destination is summed. Call the returned
-// function when the subscription ends, so the gauge stops reporting it.
+// registrations with the same destination on this Telemetry is summed;
+// subscribers with separate Telemetry instances report separately, so share
+// one Telemetry to sum across them. Call the returned function when the
+// subscription ends, so the gauge stops reporting it.
 func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) func() {
 	src := &lagSource{
 		destination: t.destinationAttr(subject, t.consumerLag.AttrDestinationName, t.consumerLag.AttrDestinationTemplate),
 		fn:          lagFn,
 	}
 
-	t.lagMu.Lock()
-	defer t.lagMu.Unlock()
+	t.regMu.Lock()
+	defer t.regMu.Unlock()
 
+	t.lagMu.Lock()
 	if t.lags == nil {
 		t.lags = make(map[*lagSource]struct{})
 	}
 
 	t.lags[src] = struct{}{}
+	t.lagMu.Unlock()
+
+	// Register the callback only while sources exist, so a Telemetry that
+	// never reports lag leaves nothing behind on the meter.
+	if t.lagReg == nil && t.consumerLag.Inst() != nil {
+		reg, err := t.mp.Meter(instrName).RegisterCallback(t.observeLag, t.consumerLag.Inst())
+		if err != nil {
+			otel.Handle(fmt.Errorf("messaging telemetry: consumer lag callback: %w", err))
+		} else {
+			t.lagReg = reg
+		}
+	}
 
 	return func() {
-		t.lagMu.Lock()
-		defer t.lagMu.Unlock()
+		t.regMu.Lock()
+		defer t.regMu.Unlock()
 
+		t.lagMu.Lock()
 		delete(t.lags, src)
+		empty := len(t.lags) == 0
+		t.lagMu.Unlock()
+
+		if empty && t.lagReg != nil {
+			if err := t.lagReg.Unregister(); err != nil {
+				otel.Handle(fmt.Errorf("messaging telemetry: consumer lag callback: %w", err))
+			}
+
+			t.lagReg = nil
+		}
 	}
 }
 

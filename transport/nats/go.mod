@@ -7,6 +7,7 @@ replace github.com/foomo/goflux => ../../
 require (
 	github.com/foomo/goencode v0.2.0
 	github.com/foomo/goflux v0.8.0
+	github.com/foomo/gofuncy v0.5.0
 	github.com/nats-io/nats-server/v2 v2.15.3
 	github.com/nats-io/nats.go v1.56.0
 	go.opentelemetry.io/otel v1.47.0
@@ -17,7 +18,6 @@ require (
 	github.com/antithesishq/antithesis-sdk-go v0.9.0-default-no-op // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/foomo/go v0.17.1 // indirect
-	github.com/foomo/gofuncy v0.5.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect

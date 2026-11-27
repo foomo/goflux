@@ -76,7 +76,9 @@ func (s *Subscriber[T]) Subscribe(ctx context.Context, subject string, handler g
 // nats.go stops consuming; SubscribeWithReady restarts consumption on the same
 // durable consumer, so a recreated consumer is picked up in both cases. An
 // ephemeral consumer cannot be recreated under its name, so its deletion
-// returns an error wrapping [goflux.ErrSubscribe]. If the server
+// returns an error wrapping [goflux.ErrSubscribe]. A deletion without a
+// pending pull (for example during a connection outage, or while waiting to
+// retry a rejected pull) is not reported and keeps retrying. If the server
 // rejects a pull request (jetstream.ErrBadRequest), it logs an error and
 // restarts after one pull expiry ([DefaultPullExpiry] unless set through
 // [WithConsumeOpts]). It does not return, because all replicas

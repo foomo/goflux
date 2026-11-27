@@ -71,7 +71,7 @@ Opens a **client** span named `send <subject>` (or `send <template>` when a dest
 func (t *Telemetry) RegisterLag(subject string, lagFn func() int64) func()
 ```
 
-Reports `lagFn` (the number of messages waiting in a subscriber buffer) on the `goflux.consumer.lag` gauge. The lag of all registrations with the same destination is summed, so subjects that share a destination template report one total. Call the returned function when the subscription ends. The channel transport registers it for the subscribed subject in `SubscribeWithReady`.
+Reports `lagFn` (the number of messages waiting in a subscriber buffer) on the `goflux.consumer.lag` gauge. The lag of all registrations with the same destination on one `Telemetry` is summed, so subjects that share a destination template report one total. Subscribers with separate `Telemetry` instances (the default) report separately and overwrite each other on a shared destination; pass one `Telemetry` to all of them to get the total. Call the returned function when the subscription ends. The channel transport registers it for the subscribed subject in `SubscribeWithReady`.
 
 ## Metrics
 

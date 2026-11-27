@@ -33,7 +33,9 @@ func WorkQueueStreamConfig(topic string) jetstream.StreamConfig {
 //
 // The consumer is ephemeral: the server deletes it after its inactive
 // threshold, and [Subscriber.Subscribe] returns [goflux.ErrSubscribe] when
-// that happens. For a consumer that outlives its subscribers, opt in by
+// that happens while a pull is pending. A deletion without a pending pull,
+// for example during a connection outage, is not reported by nats.go, so
+// Subscribe keeps retrying instead. For a consumer that outlives its subscribers, opt in by
 // setting Durable to the generated name:
 //
 //	cfg := ConsumerConfig(topic, group)

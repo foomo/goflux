@@ -503,4 +503,15 @@ func TestRegisterLag_sumsPerDestination(t *testing.T) {
 	unregister2()
 	unregister3()
 	require.Empty(t, lag())
+
+	// The callback is unregistered with the last source and registered
+	// again with the next one.
+	unregister4 := tel.RegisterLag("invoices", func() int64 { return 4 })
+
+	require.Equal(t, map[attribute.KeyValue]int64{
+		attribute.String("messaging.destination.name", "invoices"): 4,
+	}, lag())
+
+	unregister4()
+	require.Empty(t, lag())
 }
