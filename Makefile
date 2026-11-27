@@ -38,7 +38,7 @@ go.work:
 
 .PHONY: check
 ## Run lint & tests
-check: tidy generate lint.fix test.race audit
+check: tidy generate actionlint lint.fix test.race audit
 
 .PHONY: lint
 ## Run linter
@@ -141,6 +141,11 @@ godocs:
 	@go doc -http
 
 ### Utils
+
+.PHONY: actionlint
+## Run actionlint
+actionlint:
+	@actionlint
 
 .PHONY: help
 # https://patorjk.com/software/taag/#p=display&f=miniwi&t=goflux&x=none&v=4&h=4&w=80&we=false

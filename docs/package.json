@@ -1,14 +1,14 @@
 {
-	"name": "goflux",
+	"name": "docs",
 	"private": true,
-	"devDependencies": {
-		"micromark-util-decode-string": "2.0.1",
-		"@catppuccin/vitepress": "0.1.2",
-		"vitepress": "1.6.4"
-	},
 	"scripts": {
 		"dev": "vitepress dev",
 		"build": "vitepress build",
 		"preview": "vitepress preview"
+	},
+	"devDependencies": {
+		"micromark-util-decode-string": "2.0.1",
+		"@catppuccin/vitepress": "0.1.2",
+		"vitepress": "1.6.4"
 	}
 }
